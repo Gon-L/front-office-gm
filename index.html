@@ -3989,7 +3989,7 @@ function renderHeader(){
   return `<header class="top"><div class="wrap">
    <div class="brand">${chip(t.tid)}<div><div class="tn">${t.city} ${t.nick}</div><div class="sub">${S.season} · ${phase}</div></div></div>
    <div class="score num"><div><b>${t.w}-${t.l}</b><span>Record</span></div><div><b>${teamOvr(t.tid)}</b><span>Rating</span></div><div><b>${roster(t.tid).length}</b><span>Roster</span></div>${S.owner?`<div><b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':''}">${S.owner.security}</b><span>Job</span></div>`:''}</div>
-   <div class="actions">${alertsBtn()}${bizBtn()}${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}</div>
+   <div class="actions">${alertsBtn()}${bizBtn()}${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}${settingsBtn()}</div>
    <div class="capbar"><span class="num">Payroll <b class="${pr>TAX?'bad':pr>CAP?'warn':''}">${money(pr)}</b></span>
      <div class="meter" aria-hidden="true"><i class="${cls}" style="width:${w}%"></i><u style="left:${CAP/(TAX*1.25)*100}%"></u><u style="left:${TAX/(TAX*1.25)*100}%"></u></div>
      <span class="num">Cap ${money(CAP)} · Tax ${money(TAX)}</span></div>
@@ -4087,6 +4087,15 @@ function noteToast(b){
   t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,b.some(noteNeeds)?12000:8000);
 }
 const noteUnread=()=>(S.notes||[]).filter(n=>n.id>(S.noteRead||0)).length;
+// ---------- settings (v52) ----------
+// one place for game-wide options; add new sections to renderSettingsModal
+function settingsBtn(){return `<button class="btn" data-act="settingsShow" title="Settings" aria-label="Settings">&#9881;&#xFE0E; Settings</button>`}
+function renderSettingsModal(){
+  return `<div class="modal-bg" data-act="closeSettings"><div class="modal" role="dialog" aria-modal="true" aria-label="Settings" data-act="modal">
+   <div class="spread"><h2>Settings</h2><button class="btn" data-act="closeSettings" aria-label="Close">Close</button></div>
+   <div><h3>Career</h3><div class="row"><button class="btn" data-act="newCareer" id="newCareerBtn">Start a new career</button><span class="muted">Your progress saves in this browser. Starting over erases it.</span></div></div>
+  </div></div>`;
+}
 function alertsBtn(){
   if(S.userTid==null)return '';
   const n=noteUnread();
@@ -5572,7 +5581,7 @@ function renderHistory(){
   return `${awards}${lotto}${renderRecords()}${extra}<div class="grid2"><div class="panel"><h3>Your seasons</h3><div class="scroll tall"><table><thead><tr><th class="l">Season</th><th>W</th><th>L</th><th class="l">Result</th></tr></thead><tbody>${t.hist.map(h=>`<tr><td class="l">${h.s}</td><td>${h.w}</td><td>${h.l}</td><td class="l">${h.res==='Champion'?'<b class="good">Champion</b>':h.res}</td></tr>`).join('')||'<tr><td class="l muted" colspan="4">Finish a season to see it here.</td></tr>'}</tbody></table></div></div>
   <div class="panel"><h3>Champions</h3><div class="scroll tall"><table><tbody>${S.champs.map(c=>`<tr class="${c.tid===S.userTid?'you':''}"><td class="l">${c.s}</td><td class="l">${chip(c.tid)} ${esc(c.name)}</td><td>${(S.wrapHist||[]).some(w=>w.s===c.s)?`<button class="btn small" data-act="wrapReview" data-arg="${c.s}">Season review</button>`:''}</td></tr>`).join('')||'<tr><td class="l muted">No champion crowned yet.</td></tr>'}</tbody></table></div>
   ${S.cupHist.length?`<h3>In-Season Cup</h3><div class="scroll tall"><table><tbody>${S.cupHist.map(c=>`<tr class="${c.tid===S.userTid?'you':''}"><td class="l">${c.s}</td><td class="l">${chip(c.tid)} ${T(c.tid).nick} <span class="muted">${c.score} over ${T(c.ru).abbr}</span></td><td class="l">${c.mvp?`MVP ${esc(c.mvp)}`:''}</td></tr>`).join('')}</tbody></table></div>`:''}
-  <h3>Career</h3><div class="row"><button class="btn" data-act="newCareer" id="newCareerBtn">Start a new career</button><span class="muted">Your progress saves in this browser.</span></div></div></div>`;
+</div></div>`;
 }
 function renderRecords(){
   const fr=UI.recView==='fr',u=S.userTid,bk=fr?frBook(u):S.rec;
@@ -5591,7 +5600,7 @@ function render(){showTip(null);
   if(S.awNight!=null&&!UI.cer)UI.cer={s:S.awNight,i:0,open:{}};
   if(S.wrapNight!=null&&!UI.wrap)UI.wrap={s:S.wrapNight,i:0};
   if(S.phase==='lottery'&&S.lotto&&!S.lotto.done&&S.wrapNight==null&&UI.lotSeen!==S.lotto.s){UI.lotSeen=S.lotto.s;UI.lot={auto:false,spd:UI.lotSpd||1}} // lottery night opens on its own once a season
-  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.alerts?renderAlertsModal():'');
+  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
   if(UI.offers||UI.tab==='home')UI.offerViewed=Math.max(UI.offerViewed||0,...liveOffers().map(o=>o.id));
   if(S.presser&&(UI.pressShow||UI.tab==='home'))UI.pressViewed=Math.max(UI.pressViewed||0,S.presser.id||0);
   if(UI.tab==='home'||UI.tab==='roster')UI.lrViewed=Math.max(UI.lrViewed||0,S.lr?S.lr.id:0);
@@ -5767,9 +5776,11 @@ document.addEventListener('click',e=>{
       UI.confirm=null;fireStaff(arg);break;
     case 'scheme':{const [k,o]=arg.split(':');setScheme(k,o);break}
     case 'devFocus':T(S.userTid).devFocus=arg||null;break;
+    case 'settingsShow':UI.settings=true;break;
+    case 'closeSettings':UI.settings=false;break;
     case 'newCareer':
       if(Date.now()-confirmNew>4000){confirmNew=Date.now();el.textContent='Click again to erase this career';return}
-      newLeague();UI.tab='home';break;
+      newLeague();UI.tab='home';UI.settings=false;break;
     default:return;
   }
   save();render();
@@ -5783,7 +5794,7 @@ function showTip(el){
 }
 document.addEventListener('mouseover',e=>showTip(e.target.closest&&e.target.closest('[data-tip]')));
 document.addEventListener('scroll',()=>showTip(null),true);
-document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.alerts)UI.alerts=false;else return;render()});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.alerts)UI.alerts=false;else if(UI.settings)UI.settings=false;else return;render()});
 document.addEventListener('change',e=>{
   const el=e.target;
   if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();render();return}
