@@ -220,6 +220,18 @@ tr.adv td:first-child{box-shadow:inset 3px 0 var(--good)}
 .btn.offers-btn .badge{display:inline-grid;place-items:center;min-width:1.35em;height:1.35em;padding:0 .3em;border-radius:99px;background:var(--you-line);color:#fff;font-size:.78rem;font-variant-numeric:tabular-nums}
 .btn.offers-btn.new{border-color:var(--you-line);background:var(--you)}
 .toast .btn{margin-left:.7rem;padding:.15rem .6rem;font-size:.85rem}
+.toast.notes{display:grid;gap:.4rem;width:min(90vw,560px);box-sizing:border-box}
+.toast.notes .nrow{display:flex;align-items:center;justify-content:space-between;gap:.6rem}
+.toast.notes .nrow>span{min-width:0}
+.toast.notes .btn{margin-left:0;flex:none}
+.toast.notes .nhead{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;opacity:.75}
+.toast.notes .more{opacity:.75;font-size:.85rem}
+.alerts{list-style:none;margin:0;padding:0;display:grid;gap:.35rem}
+.alerts li{display:grid;grid-template-columns:5.2em 1fr auto;gap:.6rem;align-items:center;padding:.45rem .6rem;border:1px solid var(--line);border-radius:6px;background:var(--sunk)}
+.alerts li.unread{background:var(--you);border-color:var(--you-line)}
+.alerts li .when{color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+.alerts li .pill{margin-right:.35rem}
+@media (max-width:560px){.alerts li{grid-template-columns:1fr auto}.alerts li .when{grid-column:1/-1}}
 /* History tables that grow every season scroll inside their card, header row pinned */
 .scroll.tall{max-height:24rem;overflow-y:auto}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:.8rem}
@@ -378,7 +390,11 @@ function mineTxt(txt){
   const t=T(u);if(txt.includes(t.nick)||txt.includes(t.city)||new RegExp(`\\b${t.abbr}\\b`).test(txt))return true;
   return roster(u).some(p=>txt.includes(p.name));
 }
-function news(txt){const n={s:S.season,txt};if(mineTxt(txt))n.m=1;S.news.unshift(n);S.news=S.news.filter(x=>x.s>=S.season-1).slice(0,NEWS_KEEP)}
+// notifications (v51): anything that happens to your team during a sim; depth>0 while a day is being simmed,
+// batch holds what this sim produced until the next render shows it
+const NOTE={depth:0,batch:[]},NOTES_KEEP=120;
+// force: league news worth an alert even though it isn't about your team
+function news(txt,force){const n={s:S.season,txt};if(mineTxt(txt))n.m=1;S.news.unshift(n);S.news=S.news.filter(x=>x.s>=S.season-1).slice(0,NEWS_KEEP);if(NOTE.depth&&(n.m||force))noteNews(txt)}
 
 function calcOvr(r){return Math.round(r.ins*.19+r.thr*.19+r.pas*.15+r.reb*.14+r.def*.17+r.ath*.16)}
 // no two active players or staff share a generated name
@@ -1204,7 +1220,8 @@ function seasonRecords(){
 }
 
 // ---------- season flow ----------
-function simDays(n){
+function simDays(n){noting(()=>simDays0(n))}
+function simDays0(n){
   if(S.phase!=='regular')return;
   if(!S.preW||S.preW.s!==S.season)S.preW={s:S.season,w:Object.fromEntries(S.teams.map(t=>[t.tid,expectedWins(t.tid)]))}; // October expectations, for Coach and Executive of the Year
   for(let k=0;k<n&&S.day<S.sched.length;k++){
@@ -1261,7 +1278,7 @@ function simDays(n){
       if(v%7===3)aiFaRound(); // leftover free agents lower their price; teams with room pick them up
       if(v%7===0)updateMood();
     }
-    if(wasOpen&&S.day>=deadlineDay()){news('The trade deadline has passed. Trades reopen after the playoffs.');pressDeadline()}
+    if(wasOpen&&S.day>=deadlineDay()){news('The trade deadline has passed. Trades reopen after the playoffs.',1);pressDeadline()}
   }
   if(S.day>=S.sched.length)startPlayoffs();
 }
@@ -1510,7 +1527,7 @@ function fireBizEvent(){
   if(S.bizEv)answerBiz(S.bizEv.opts.length-1,true); // too slow: the last option happens by default
   const mem=S.bizMem=S.bizMem||[],ok=BIZ_EVENTS.filter(([k,c])=>!mem.includes(k)&&c());
   const hot=ok.filter(([k])=>BIZ_HOT.includes(k)),e=pick(hot.length&&rnd()<.7?hot:ok);if(!e)return;
-  const [title,text,opts]=e[2]();S.bizEv={k:e[0],title,text,opts};
+  const [title,text,opts]=e[2]();S.bizEv={id:(S.bizId=(S.bizId||0)+1),k:e[0],title,text,opts};
   mem.push(e[0]);S.bizMem=mem.slice(-6);
 }
 // event money scales with the market; cash-in options pay a losing team a bit more
@@ -1531,7 +1548,7 @@ function answerBiz(i,auto){
   if(e.player){const p=pById(e.player.pid);if(p&&p.tid===u)p.mood=clamp(Math.round(moodOf(p)+e.player.v),0,100)}
   if(e.sec&&S.owner)S.owner.security=clamp(S.owner.security+e.sec,0,100);
   if(e.riv)addRiv(u,e.riv.tid,e.riv.v);
-  news(`${ev.title}: ${auto?'no decision in time, so ':''}${lc1(label)}.`);S.bizEv=null;
+  news(`${ev.title}: ${auto?'no decision in time, so ':''}${lc1(label)}.`,auto);S.bizEv=null;
 }
 function renderBizEv(){
   const ev=S.bizEv;if(!ev)return '';
@@ -1588,7 +1605,7 @@ function reviewOwner(){
   o.security=clamp(o.security+delta,0,100);
   o.met=null;if(o.bonus){o.bonus.pay=0;if(o.bonus.staffLeft&&--o.bonus.staffLeft<=0)o.bonus.staff=0} // a new year of meetings
   o.hist.unshift({s:S.season,tid:S.userTid,delta,security:o.security,lines});
-  news(`Owner review: job security ${delta>=0?'up':'down'} ${Math.abs(delta)} to ${o.security}.`);
+  news(`Owner review: job security ${delta>=0?'up':'down'} ${Math.abs(delta)} to ${o.security}.`,1);
   if(o.security<=0){
     const pool=S.teams.filter(t=>t.tid!==S.userTid).sort((a,b)=>pct(a)-pct(b)).slice(0,12).map(t=>t.tid);
     S.fired={from:S.userTid,offers:shuffle(pool).slice(0,3)};
@@ -2080,7 +2097,8 @@ function startPlayoffs(){
 }
 const sDone=s=>s.wa===4||s.wb===4;
 const sWin=s=>s.wa===4?s.a:s.b;
-function simPlayoffDay(){
+function simPlayoffDay(){noting(simPlayoffDay0)}
+function simPlayoffDay0(){
   if(S.phase!=='playoffs')return;
   S.poDays=(S.poDays||0)+1;if(S.poDays%4===0)scoutWeek(); // scouts keep working through the playoffs
   const cur=S.po.rounds[S.po.rounds.length-1],rd=S.po.rounds.length-1,u=S.userTid;
@@ -2146,7 +2164,7 @@ function roundReached(tid){
 function finishPlayoffs(champ){
   S.po.champ=champ;
   S.champs.unshift({s:S.season,tid:champ,name:tname(champ)});
-  news(`${tname(champ)} won the ${S.season} championship.`);
+  news(`${tname(champ)} won the ${S.season} championship.`,1);
   hypeBump(champ,10);
   // Finals MVP: the champion's best performer in the Finals
   const fm=S.po.fst&&bestOf(S.po.fst,champ),aw=S.awards[0];
@@ -2494,7 +2512,8 @@ function canSign(tid,p,room){
 function sign(tid,p,amt,yrs){
   if(amt>MINSAL+.001&&payroll(tid)+amt>CAP)T(tid).mleUsed=true;
   delete p.idle;p.tid=tid;p.contract={amt,exp:S.season+yrs-1};p.ask=0;newTeamMood(p)}
-function faDay(){
+function faDay(){noting(faDay0)}
+function faDay0(){
   S.faDay++;S.tick++;
   if(S.tick%3===0)makeOffers();
   if(S.tick%4===0)aiTrades();
@@ -2912,7 +2931,7 @@ const newPressMem=()=>({lastQ:{},recent:[],promises:[],seen:{},trades:0});
 // (except a soft one, like a beat writer's question, which can be passed over for free)
 function press(key,title,q,opts,prio=2,soft=false){
   if(S.userTid==null)return;
-  if(S.presser){if(prio<(S.presser.prio||2))return;if(!S.presser.soft)hypeBump(S.userTid,-1)}
+  if(S.presser){if(prio<(S.presser.prio||2))return;if(!S.presser.soft){hypeBump(S.userTid,-1);if(NOTE.depth)noteAdd(`You never answered the press about ${lc1(S.presser.title)}. Reporters took it as "no comment" (hype -1).`,'Press')}}
   S.pressN=(S.pressN||0)+1;S.presser={key,title,q,opts:shuffle(opts.slice()),prio,soft,id:S.pressN};
 }
 // pick a question version, avoiding the last two asked for a situation
@@ -3939,9 +3958,9 @@ function counterAsk(tid){
 function phaseLabel(){
   return {regular:'Regular season',playoffs:'Playoffs',lottery:'Draft lottery',combine:'Pre-draft combine',draft:'Draft',resign:'Re-sign players',freeagency:'Free agency'}[S.phase];
 }
-function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3800)}
+function toast(msg){const t=document.getElementById('toast');t.className='toast';t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,3800)}
 // a toast with one button, e.g. "View" on a new trade offer; stays up a little longer
-function toastAct(msg,label,act){const t=document.getElementById('toast');t.innerHTML=`${esc(msg)}<button class="btn" data-act="${act}">${esc(label)}</button>`;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,6500)}
+function toastAct(msg,label,act){const t=document.getElementById('toast');t.className='toast';t.innerHTML=`${esc(msg)}<button class="btn" data-act="${act}">${esc(label)}</button>`;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,6500)}
 
 function renderPicker(){
   const rk=ovrRanks();
@@ -3970,7 +3989,7 @@ function renderHeader(){
   return `<header class="top"><div class="wrap">
    <div class="brand">${chip(t.tid)}<div><div class="tn">${t.city} ${t.nick}</div><div class="sub">${S.season} · ${phase}</div></div></div>
    <div class="score num"><div><b>${t.w}-${t.l}</b><span>Record</span></div><div><b>${teamOvr(t.tid)}</b><span>Rating</span></div><div><b>${roster(t.tid).length}</b><span>Roster</span></div>${S.owner?`<div><b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':''}">${S.owner.security}</b><span>Job</span></div>`:''}</div>
-   <div class="actions">${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}</div>
+   <div class="actions">${alertsBtn()}${bizBtn()}${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}</div>
    <div class="capbar"><span class="num">Payroll <b class="${pr>TAX?'bad':pr>CAP?'warn':''}">${money(pr)}</b></span>
      <div class="meter" aria-hidden="true"><i class="${cls}" style="width:${w}%"></i><u style="left:${CAP/(TAX*1.25)*100}%"></u><u style="left:${TAX/(TAX*1.25)*100}%"></u></div>
      <span class="num">Cap ${money(CAP)} · Tax ${money(TAX)}</span></div>
@@ -4007,6 +4026,95 @@ function offerAlert(){
   if(!fresh.length||UI.offers)return;
   const o=fresh[fresh.length-1];UI.offerToasted=true;
   toastAct(fresh.length>1?`${fresh.length} new trade offers, latest from the ${tname(o.tid)}.`:`New trade offer from the ${tname(o.tid)}.`,'View','offersShow');
+}
+// ---------- notifications (v51) ----------
+function noting(f){
+  if(NOTE.depth++){try{return f()}finally{NOTE.depth--}}
+  const was=noteState();
+  try{return f()}finally{NOTE.depth--;noteDiff(was)}
+}
+const noteWhen=()=>S.phase==='regular'?`Day ${Math.min(S.day+1,S.sched.length)}`:S.phase==='freeagency'?`FA day ${S.faDay}`:phaseLabel();
+function noteAdd(txt,tag,act,arg,ref){
+  if(S.userTid==null)return;
+  const n={id:(S.noteId=(S.noteId||0)+1),s:S.season,d:noteWhen(),txt,tag};
+  if(act){n.act=act;if(arg!=null)n.arg=arg;if(ref!=null)n.ref=ref}
+  S.notes=[n,...(S.notes||[])].slice(0,NOTES_KEEP);NOTE.batch.push(n);
+}
+const NOTE_TAGS=[[/injur|out \d+ games?\b|day-to-day/i,'Injury'],[/promise|locker room|trade request|asked for a trade|head coach|coaching|morale|ignored|feels/i,'Locker room'],
+  [/trade|rumor|deadline/i,'Trades'],[/press/i,'Press'],[/owner|job security|fired|sponsor|ticket|arena|tax|no decision in time/i,'Business'],[/\bCup\b/,'Cup'],[/this summer|breakout|development/i,'Development'],
+  [/award|players? of the|record|career high|triple-double|scored \d+|buzzer-beater|game-winner/i,'Milestone']];
+function noteNews(txt){
+  const tag=(NOTE_TAGS.find(([re])=>re.test(txt))||[0,'Team'])[1];
+  const p=S.userTid!=null&&roster(S.userTid).find(x=>txt.includes(x.name));
+  if(/head coach .* gone|lost faith in head coach/.test(txt))noteAdd(txt,tag,'tab','staff');
+  else if(p)noteAdd(txt,tag,'player',p.pid);
+  else noteAdd(txt,tag);
+}
+// the decisions waiting on you before a sim day, to spot the new ones after it
+function noteState(){return {o:S.userTid==null?[]:liveOffers().map(o=>o.id),p:S.presser&&S.presser.id,b:S.bizEv&&S.bizEv.id,l:S.lr&&S.lr.id}}
+function noteDiff(w){
+  if(S.userTid==null)return;
+  for(const o of liveOffers().filter(o=>!w.o.includes(o.id))){
+    const want=o.tm.map(id=>pById(id).name);
+    noteAdd(`New trade offer from the ${tname(o.tid)}${want.length?` for ${want.join(' and ')}`:''}.`,'Trades','offersShow',null,o.id);
+  }
+  if(S.presser&&S.presser.id!==w.p)noteAdd(`Press conference: ${S.presser.title}. Reporters are waiting.`,'Press','pressShow',null,S.presser.id);
+  if(S.bizEv&&S.bizEv.id!==w.b)noteAdd(`Business decision: ${S.bizEv.title}. ${S.bizEv.text}`,'Business','bizShow',null,S.bizEv.id);
+  if(S.lr&&S.lr.id!==w.l)noteAdd(`Locker room: ${S.lr.title}.`,'Locker room','lrShow',null,S.lr.id);
+}
+// can the note's button still do something? decisions expire once answered or replaced
+function noteLive(n){
+  switch(n.act){
+    case 'offersShow':return liveOffers().some(o=>o.id===n.ref);
+    case 'pressShow':return !!S.presser&&S.presser.id===n.ref;
+    case 'bizShow':return !!S.bizEv&&S.bizEv.id===n.ref;
+    case 'lrShow':return !!S.lr&&S.lr.id===n.ref;
+    case 'player':return !!pById(n.arg);
+    default:return !!n.act;
+  }
+}
+const NOTE_BTN={offersShow:'View offer',pressShow:'Answer',bizShow:'Decide',lrShow:'View',player:'Player',tab:'Open'};
+const noteBtn=(n,cls='')=>noteLive(n)?`<button class="btn${cls}" data-act="${n.act}"${n.arg!=null?` data-arg="${esc(String(n.arg))}"`:''}>${NOTE_BTN[n.act]}</button>`:'';
+const noteNeeds=n=>['offersShow','pressShow','bizShow','lrShow'].includes(n.act); // waiting on a decision from you
+// after a sim: up to three things that happened, open decisions first, newest first, and a way into the full list
+function noteToast(b){
+  if(UI.alerts)return;
+  const r=[...b].reverse(),open=n=>noteNeeds(n)&&noteLive(n),top=[...r.filter(open),...r.filter(n=>!open(n))].slice(0,3),t=document.getElementById('toast');
+  t.className='toast notes';
+  t.innerHTML=`<div class="nrow"><span class="nhead">${b.length===1?'While you were away':`${b.length} updates for your team`}</span><button class="btn" data-act="toastX" aria-label="Dismiss">✕</button></div>`
+    +top.map(n=>`<div class="nrow"><span>${esc(n.txt)}</span>${noteBtn(n)}</div>`).join('')
+    +(b.length>1?`<div class="nrow"><span class="more">${b.length>3?`+${b.length-3} more`:''}</span><button class="btn" data-act="alertsShow">All alerts</button></div>`:'');
+  t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,b.some(noteNeeds)?12000:8000);
+}
+const noteUnread=()=>(S.notes||[]).filter(n=>n.id>(S.noteRead||0)).length;
+function alertsBtn(){
+  if(S.userTid==null)return '';
+  const n=noteUnread();
+  return `<button class="btn offers-btn${n?' new':''}" data-act="alertsShow" title="${n?`${n} new alert${n>1?'s':''}`:'Everything that happened to your team'}">Alerts${n?` <span class="badge">${n>99?'99+':n}</span>`:''}</button>`;
+}
+function renderAlertsModal(){
+  const ns=S.notes||[],from=UI.alertsFrom||0;
+  return `<div class="modal-bg" data-act="closeAlerts"><div class="modal wide" role="dialog" aria-modal="true" aria-label="Alerts" data-act="modal">
+    <div class="spread"><h2>Alerts</h2><button class="btn" data-act="closeAlerts" aria-label="Close">Close</button></div>
+    <p class="muted" style="font-size:.85rem">Everything that happened to your team while you simmed, newest first. Decisions you still owe have a button.</p>
+    ${ns.length?`<ul class="alerts">${ns.map(n=>`<li class="${n.id>from?'unread':''}"><span class="when">${n.s!==S.season?n.s+' · ':''}${esc(n.d)}</span><span>${n.tag?`<span class="pill">${esc(n.tag)}</span>`:''}${esc(n.txt)}</span><span>${noteBtn(n,' small')}</span></li>`).join('')}</ul>`:'<p class="muted">Nothing yet. Sim a day or a week and anything that happens to your team shows up here.</p>'}</div></div>`;
+}
+// business decisions get a header button and a pop-up, like the press
+function bizBtn(){
+  const ev=S.bizEv;if(!ev||S.userTid==null)return '';
+  const fresh=(ev.id||0)>(UI.bizViewed||0);
+  return `<button class="btn offers-btn${fresh?' new':''}" data-act="bizShow" title="${fresh?'A business decision is waiting':'Open the business decision'}">Decision <span class="badge">1</span></button>`;
+}
+function renderBizModal(){
+  return `<div class="modal-bg" data-act="closeBiz"><div class="modal wide" role="dialog" aria-modal="true" aria-label="Business decision" data-act="modal">
+    <div class="spread"><h2>Business decision</h2><button class="btn" data-act="closeBiz" aria-label="Close">Close</button></div>
+    ${S.bizEv?renderBizEv():'<p class="muted">No decision waiting right now.</p>'}</div></div>`;
+}
+// after a sim's toast, the single-event alerts shouldn't repeat what it just said
+function noteSync(){
+  UI.offerSeen=Math.max(UI.offerSeen||0,...liveOffers().map(o=>o.id));
+  if(S.presser)UI.pressSeen=S.presser.id||0;
+  if(S.lr)UI.lrSeen=S.lr.id;
 }
 const TABS=[['home','Home'],['roster','Roster'],['cap','Cap'],['staff','Staff'],['business','Business'],['standings','Standings'],['games','Games'],['stats','Stats'],['trade','Trade'],['fa','Free agents'],['draft','Draft'],['playoffs','Playoffs'],['history','History']];
 function renderNav(){return `<nav class="tabs"><div class="wrap">${TABS.map(([k,l])=>`<button class="tab${UI.tab===k?' on':''}" data-act="tab" data-arg="${k}">${l}</button>`).join('')}</div></nav>`}
@@ -4170,7 +4278,7 @@ function answerStory(i,auto){
   const P=pById(ev.pid);if(P&&P.tid===S.userTid)P.tagSeen=P.tid;
   const Q=ev.pid2!=null&&pById(ev.pid2);if(Q&&Q.tid===S.userTid)Q.tagSeen=Q.tid;
   S.lrLog=[{s:S.season,title:ev.title,choice:label,out,auto:!!auto},...(S.lrLog||[])].slice(0,12);
-  news(`Locker room, ${lc1(ev.title)}: ${auto?'no decision in time, so ':''}${lc1(label)}.${out?' '+out:''}`);
+  news(`Locker room, ${lc1(ev.title)}: ${auto?'no decision in time, so ':''}${lc1(label)}.${out?' '+out:''}`,auto);
 }
 function renderStory(){
   const ev=S.lr;if(!ev)return '';
@@ -5483,11 +5591,13 @@ function render(){showTip(null);
   if(S.awNight!=null&&!UI.cer)UI.cer={s:S.awNight,i:0,open:{}};
   if(S.wrapNight!=null&&!UI.wrap)UI.wrap={s:S.wrapNight,i:0};
   if(S.phase==='lottery'&&S.lotto&&!S.lotto.done&&S.wrapNight==null&&UI.lotSeen!==S.lotto.s){UI.lotSeen=S.lotto.s;UI.lot={auto:false,spd:UI.lotSpd||1}} // lottery night opens on its own once a season
-  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():'');
+  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.alerts?renderAlertsModal():'');
   if(UI.offers||UI.tab==='home')UI.offerViewed=Math.max(UI.offerViewed||0,...liveOffers().map(o=>o.id));
   if(S.presser&&(UI.pressShow||UI.tab==='home'))UI.pressViewed=Math.max(UI.pressViewed||0,S.presser.id||0);
   if(UI.tab==='home'||UI.tab==='roster')UI.lrViewed=Math.max(UI.lrViewed||0,S.lr?S.lr.id:0);
-  storyAlert();UI.offerToasted=false;offerAlert();if(!UI.offerToasted)pressAlert();
+  if(S.bizEv&&(UI.bizShow||UI.tab==='home'))UI.bizViewed=Math.max(UI.bizViewed||0,S.bizEv.id||0);
+  if(NOTE.batch.length&&!(S.fired||UI.live||UI.ask||UI.cer||UI.wrap||UI.lot)){const b=NOTE.batch;NOTE.batch=[];noteToast(b);noteSync()} // held until a full-screen moment closes
+  else if(!NOTE.batch.length){storyAlert();UI.offerToasted=false;offerAlert();if(!UI.offerToasted)pressAlert()}
   const hdr=app.querySelector('.top');if(hdr)document.documentElement.style.setProperty('--hdr',hdr.offsetHeight+'px');
 }
 
@@ -5496,17 +5606,23 @@ let confirmNew=0;
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el||el.disabled)return;
   const act=el.dataset.act,arg=el.dataset.arg,num=arg!=null?Number(arg):null;
+  if(el.closest('#toast'))document.getElementById('toast').hidden=true; // any button on a toast dismisses it
   switch(act){
+    case 'toastX':return;
+    case 'alertsShow':UI.alertsFrom=S.noteRead||0;S.noteRead=S.noteId||0;UI.alerts=true;UI.offers=false;UI.pressShow=false;UI.bizShow=false;UI.player=null;UI.game=null;break;
+    case 'closeAlerts':UI.alerts=false;break;
+    case 'bizShow':UI.bizShow=true;UI.alerts=false;UI.offers=false;UI.pressShow=false;UI.player=null;UI.game=null;break;
+    case 'closeBiz':UI.bizShow=false;break;
     case 'pickTeam':S.userTid=num;newOwner(num);pressMedia();news(`You took over the ${tname(num)}. Your owner: ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);UI.tab='home';break;
     case 'takeJob':takeJob(num);pressMedia();break;
     case 'presser':answerPress(num);if(!S.presser)UI.pressShow=false;break;
     case 'lrAns':answerStory(num);break;
-    case 'lrShow':UI.tab='roster';UI.player=null;UI.offers=false;UI.pressShow=false;document.getElementById('toast').hidden=true;window.scrollTo(0,0);break;
-    case 'pressShow':UI.pressShow=true;UI.offers=false;UI.player=null;UI.game=null;document.getElementById('toast').hidden=true;break;
+    case 'lrShow':UI.alerts=false;UI.tab='roster';UI.player=null;UI.offers=false;UI.pressShow=false;document.getElementById('toast').hidden=true;window.scrollTo(0,0);break;
+    case 'pressShow':UI.alerts=false;UI.pressShow=true;UI.offers=false;UI.player=null;UI.game=null;document.getElementById('toast').hidden=true;break;
     case 'closePress':UI.pressShow=false;break;
     case 'offerAccept':acceptOffer(num);break;
     case 'offerDecline':S.offers=S.offers.filter(o=>o.id!==num);break;
-    case 'offersShow':UI.offers=true;UI.player=null;document.getElementById('toast').hidden=true;break;
+    case 'offersShow':UI.alerts=false;UI.offers=true;UI.player=null;document.getElementById('toast').hidden=true;break;
     case 'closeOffers':UI.offers=false;break;
     case 'offerOpen':{const o=S.offers.find(x=>x.id===num);if(!o)break;UI.offers=false;clearTrade();UI.tview='build';UI.tradeTid=o.tid;o.tm.forEach(x=>UI.tm.add(x));o.tt.forEach(x=>UI.tt.add(x));o.pm.forEach(x=>UI.pm.add(x));o.pt.forEach(x=>UI.pt.add(x));UI.tab='trade';break}
     case 'setPrice':{const v=parseInt(document.getElementById('ticketPrice').value,10);if(!(v>=20&&v<=400)){toast('Enter an average ticket price between $20 and $400.');return}
@@ -5518,12 +5634,12 @@ document.addEventListener('click',e=>{
       news(how==='cash'?`You started a ${money(c)} arena upgrade. It opens next season.`:`You started an arena upgrade, financed at ${money(c)} a season for ${ARENA_YEARS} seasons. It opens next season.`);break}
     case 'askOwner':askOwner(arg);break;
     case 'bizTab':UI.biz=arg;break;
-    case 'bizAns':answerBiz(num);break;
+    case 'bizAns':answerBiz(num);UI.bizShow=false;break;
     case 'promo':queuePromo(arg);break;
     case 'city':pickCity(arg);break;
     case 'sthDisc':if([.05,.15,.25].includes(num))T(S.userTid).biz.disc=num;break;
     case 'deal':{const [k,i]=arg.split(':');takeDeal(k,Number(i));break}
-    case 'tab':UI.tab=arg;if(el.dataset.dpview){UI.rview='dev';UI.player=null}break;
+    case 'tab':UI.tab=arg;UI.alerts=false;if(el.dataset.dpview){UI.rview='dev';UI.player=null}break;
     case 'simday':runSim('reg',1);break;
     case 'simweek':runSim('reg',7);break;
     case 'simreg':runSim('reg',999);break;
@@ -5583,7 +5699,7 @@ document.addEventListener('click',e=>{
     case 'tradeClear':clearTrade();break;
     case 'tradeAdd':{const [k,id]=arg.split(':');(k==='p'?UI.tm:UI.pm).add(Number(id));break}
     case 'propose':proposeTrade();UI.finder=null;break;
-    case 'player':UI.player=num;break;
+    case 'player':UI.player=num;UI.alerts=false;break;
     case 'closePlayer':UI.player=null;break;
     case 'game':UI.game=num;UI.player=null;break;
     case 'closeGame':UI.game=null;resumeSim();break;
@@ -5667,7 +5783,7 @@ function showTip(el){
 }
 document.addEventListener('mouseover',e=>showTip(e.target.closest&&e.target.closest('[data-tip]')));
 document.addEventListener('scroll',()=>showTip(null),true);
-document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else return;render()});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.alerts)UI.alerts=false;else return;render()});
 document.addEventListener('change',e=>{
   const el=e.target;
   if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();render();return}
