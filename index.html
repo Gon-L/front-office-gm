@@ -6182,7 +6182,7 @@ function renderDraft(){
   let head=`<h2>${S.season} draft class</h2>
    <p class="muted">Ratings are scouting ranges, not facts. Ranges narrow as you scout: each week your focus list gets a full look (${FOCUS_PTS} points each), and every prospect gets a little media coverage. Better analytics staff means tighter ranges and a bigger focus list.</p>
    ${S.phase==='combine'?`<p><b>Combine:</b> workouts ${S.combine.work.length}/${WORKOUTS} <span class="muted">(close look, tightens every range)</span> · interviews ${S.combine.int.length}/${INTERVIEWS} <span class="muted">(work ethic)</span> · medicals ${S.combine.med.length}/${medSlots()} <span class="muted">(durability; your medical staff sets accuracy)</span></p>`
-     :`<p><b>Focus list ${focus.length}/${cap}</b> <span class="muted">· ★ adds or removes a prospect</span></p>`}`;
+     :`<p><b>Focus list ${focus.length}/${cap}</b> <span class="muted">· ★ adds or removes a prospect</span>${focus.length?` <button class="btn small" data-act="focusClear" aria-label="Clear the focus list">Clear list</button>`:''}</p>`}`;
   let order='';
   if(S.phase==='draft'){
     head=`<h2>${S.season} draft · pick ${S.draft.idx+1} of 60</h2>${onClock?'<p class="good"><b>You are on the clock.</b> Pick a player below. Your board is sorted by your scouts\' estimates.</p>':''}
@@ -6400,6 +6400,7 @@ document.addEventListener('click',e=>{
       p.resign='yes';break}
     case 'extend':extend(pById(num));break;
     case 'fscout':S.fscout=!S.fscout;if(S.fscout)S.focus=(S.focus||[]).slice(0,focusCap());break;
+    case 'focusClear':S.focus=[];break;
     case 'focus':{S.focus=S.focus||[];const i=S.focus.indexOf(num);if(i>=0)S.focus.splice(i,1);else if(S.focus.length<focusCap())S.focus.push(num);break}
     case 'letgo':pById(num).resign='no';break;
     case 'toFA':toFreeAgency();UI.tab='fa';break;
