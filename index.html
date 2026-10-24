@@ -1243,6 +1243,7 @@ function simDays(n){
     if(S.day%7===6)S.teams.forEach(t=>{if(t.tid!==S.userTid)t.biz.price=goodPrice(t)}); // AI teams reprice weekly
     S.day++;
     if(S.day%16===8&&S.day<S.sched.length-3)fireBizEvent(); // a business decision every couple of weeks
+    if(S.day%20===12&&S.day<S.sched.length-3&&rnd()<.75)fireStory(); // a locker room story every few weeks
     awardDay();
     if(cupOn()&&S.day<S.sched.length)cupSetup(S.day);
     if(S.day===tvFlexDay()&&S.userTid!=null){
@@ -2046,7 +2047,7 @@ function chemPartsOf(tid){
   const wt=core.reduce((s,p,i)=>s+MINS[i],0),fam=core.reduce((s,p,i)=>s+gelOf(p)*MINS[i],0)/wt;
   const mood=core.reduce((s,p)=>s+moodOf(p),0)/core.length;
   const roleBad=core.filter(p=>startPart(p)<0).length,lead=Math.max(0,...ro.filter(isLeader).map(leadOf)),req=ro.filter(p=>p.tradeReq).length;
-  return [['Familiarity',Math.round((fam-.75)*60)],['Morale',Math.round((mood-60)*.5)],['Roles',-Math.min(15,roleBad*5)],['Leadership',lead?Math.round(clamp((lead-50)/3,2,10)):0],['Trade requests',-req*6],['Coach',coachPart(tid)],...(tid===S.userTid?promChem():[])];
+  return [['Familiarity',Math.round((fam-.75)*60)],['Morale',Math.round((mood-60)*.5)],['Roles',-Math.min(15,roleBad*5)],['Leadership',lead?Math.round(clamp((lead-50)/3,2,10)):0],['Trade requests',-req*6],['Coach',coachPart(tid)],...(tid===S.userTid?[...promChem(),...lrChem()]:[])];
 }
 const chemOf=tid=>clamp(Math.round(55+chemParts(tid).reduce((s,x)=>s+x[1],0)),0,100);
 const chemLabel=c=>c>=80?'Excellent':c>=65?'Good':c>=50?'Uneven':c>=35?'Shaky':'Toxic';
@@ -2256,7 +2257,8 @@ function develop(p){
   p.ment=null;
   if(a<=23&&p.tid>=0){const m=mentorOf(p);let v=-.15;if(m){v+=posGrp(m)===posGrp(p)?.55:.35;p.ment=m.pid}base+=v;W(m?`Mentor ${m.name}`:'No mentor',v)}
   {const v=playDev(p);base+=v;W(p.gl?'G League minutes':'Playing time',v)}
-  if(p.chal===S.season&&p.tid>=0){base+=p.chalB||0;W('You challenged him',p.chalB||0)} // you challenged him this season
+  if(p.chal===S.season&&p.tid>=0){base+=p.chalB||0;W('You challenged him',p.chalB||0)}
+  if(p.lrDev&&p.lrDev.s===S.season&&p.tid>=0){base+=p.lrDev.v;W('Locker room story',p.lrDev.v)} // you challenged him this season
   const dp=a<=27?planOf(p):null;
   if(dp&&dp.i==='heavy'){base+=.3;W('Heavy workload',.3)}
   // summer surprises for 20-24 year olds; work ethic tilts the odds
@@ -3968,7 +3970,7 @@ function renderHeader(){
   return `<header class="top"><div class="wrap">
    <div class="brand">${chip(t.tid)}<div><div class="tn">${t.city} ${t.nick}</div><div class="sub">${S.season} · ${phase}</div></div></div>
    <div class="score num"><div><b>${t.w}-${t.l}</b><span>Record</span></div><div><b>${teamOvr(t.tid)}</b><span>Rating</span></div><div><b>${roster(t.tid).length}</b><span>Roster</span></div>${S.owner?`<div><b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':''}">${S.owner.security}</b><span>Job</span></div>`:''}</div>
-   <div class="actions">${pressBtn()}${offersBtn()}${phaseActions()}</div>
+   <div class="actions">${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}</div>
    <div class="capbar"><span class="num">Payroll <b class="${pr>TAX?'bad':pr>CAP?'warn':''}">${money(pr)}</b></span>
      <div class="meter" aria-hidden="true"><i class="${cls}" style="width:${w}%"></i><u style="left:${CAP/(TAX*1.25)*100}%"></u><u style="left:${TAX/(TAX*1.25)*100}%"></u></div>
      <span class="num">Cap ${money(CAP)} · Tax ${money(TAX)}</span></div>
@@ -4050,7 +4052,7 @@ function renderHome(){
   const ch=chemOf(u),chTxt=`<p><b>Chemistry:</b> <span class="${chemCls(ch)}">${ch} · ${chemLabel(ch)}</span>${ch<50?' <span class="muted">· see Roster for why</span>':''}</p>`;
   const vac=ROLES.filter(([r])=>!T(u).staff[r]).map(([,l])=>l.toLowerCase());
   const vacTxt=vac.length?`<p><b class="bad">No ${vac.join(', ')}.</b> <button class="btn small" data-act="tab" data-arg="staff">Hire on the Staff tab</button></p>`:'';
-  return `<div class="home"><div class="home-top">${renderBizEv()}${renderPress()}${renderOffers()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${cupTxt}${next}</div></div>
+  return `<div class="home"><div class="home-top">${renderStory()}${renderBizEv()}${renderPress()}${renderOffers()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${cupTxt}${next}</div></div>
   <aside class="panel home-side"><div class="spread"><h3>News</h3><div class="row">${[['','All'],['mine','Your team']].map(([k,l])=>`<button class="btn small${(UI.newsF||'')===k?' primary':''}" data-act="newsF" data-arg="${k}">${l}</button>`).join('')}</div></div><ul class="news">${S.news.filter(n=>UI.newsF!=='mine'||n.m).slice(0,60).map(n=>`<li><span>${n.s}</span><span>${esc(n.txt)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul></aside>
   <div class="home-rest"><div class="panel"><div class="spread"><h3>Last game</h3>${S.lastBox&&S.lastBox.id&&gameLog(S.lastBox.id)?`<button class="btn small" data-act="game" data-arg="${S.lastBox.id}">Game page: flow and play-by-play</button>`:''}</div>${S.lastBox&&S.lastBox.recap?`<p>${esc(S.lastBox.recap)}</p>`:''}${renderBox()}</div>
   ${renderRace()}<div class="grid2">
@@ -4071,6 +4073,131 @@ function playerRows(list,{actions,sel,selAct,prospect,trend}={}){
   return `<div class="scroll"><table><thead><tr>${sel?'<th></th>':''}${th('name','Player','l')}<th class="l"${tipAttr('Pos')}>Pos</th>${prospect?'<th class="l">Background</th><th class="l">Pre-draft stats</th>':''}${th('age','Age')}${th('ovr','Ovr')}${th('pot','Pot')}${RK.map(k=>th(k,RLABEL[k])).join('')}${prospect?'':`${th('ppg','PPG')}<th${tipAttr('RPG')}>RPG</th><th${tipAttr('APG')}>APG</th>${th('sal','Salary')}<th${tipAttr('Thru')}>Thru</th>`}${actions?'<th></th>':''}</tr></thead><tbody>
   ${list.map(p=>{const g=p.st.gp;return `<tr class="${sel&&sel.has(p.pid)?'sel':''}">${sel?`<td><input type="checkbox" class="check" id="${selAct}-${p.pid}" data-act="${selAct}" data-arg="${p.pid}" ${sel.has(p.pid)?'checked':''} aria-label="Select ${esc(p.name)}"></td>`:''}<td class="l">${plink(p.pid,p.name)}${blkPill(p)}${p.gl?' <span class="pill muted" title="In the G League for development">G</span>':''}${p.tradeReq?' <span class="pill bad">Wants out</span>':''}${p.awards&&p.awards.some(a=>a.s===S.season-1||a.s===S.season)?` <span class="pill good" title="${esc(p.awards.filter(a=>a.s>=S.season-1).map(a=>a.s+' '+a.type).join(', '))}">★</span>`:''}${p.inj?` <span class="pill bad" title="${esc(p.inj.type)}">Out ${p.inj.g}</span>`:''}${p.draft&&p.draft.year>=S.season-1&&p.age<=23?` <span class="pill muted" title="Pick ${p.draft.pick}">R</span>`:''}</td><td class="l">${p.pos}</td>${prospect?`<td class="l"><span title="${esc(p.arch||'')}">${esc(bgText(p.bg))}</span><br><small class="muted">${esc(p.arch||'')}</small></td><td class="l"><small>${cstatText(p)}</small>${p.meas?`<br><small class="muted">${measText(p.meas)}</small>`:''}</td>`:''}<td>${p.age}</td><td class="ovr">${isUnc(p)?`~${viewOvr(p).v}`:p.ovr}${p.delta?` <small class="${p.delta>0?'good':'bad'}">${p.delta>0?'+':''}${p.delta}</small>`:''}</td><td>${isUnc(p)?`${potGrade(viewPot(p).v)} <span class="muted">${showV(viewPot(p))}</span>`:scoutPot(p)}</td>${RK.map((k,i)=>`<td>${showV(viewR(p,k))}${trend?trendTag(p,i):''}</td>`).join('')}${prospect?'':`<td>${g?r1(p.st.pts/g):'–'}</td><td>${g?r1(p.st.reb/g):'–'}</td><td>${g?r1(p.st.ast/g):'–'}</td><td>${money(p.contract?p.contract.amt:p.ask)}</td><td>${p.contract?p.contract.exp:(p.askYrs?S.season+p.askYrs-1:'')}</td>`}${actions?`<td class="l${prospect?' acts':''}">${actions(p)}</td>`:''}</tr>`}).join('')}
   </tbody></table></div>`;
+}
+// ---------- locker room stories and personality tags (v50) ----------
+// hidden ego and temper, hashed from the player id like his other unseen traits
+const egoOf=p=>Math.round(clamp(50+hnorm(p.pid,77)*15,5,95));
+const tempOf=p=>Math.round(clamp(50+hnorm(p.pid,91)*15,5,95));
+const TAG_TIP={'Gym rat':'Lives in the gym. Grows fast and wants the resources to keep at it.','Diva':'Wants the ball and the spotlight, and says so when he does not get them.','Hothead':'Plays with an edge. Can clash with teammates.','Quiet pro':'Low ego and steady. Takes coaching well.','Glue guy':'Keeps the locker room together.','Free spirit':'Talented, not a fan of early mornings.'};
+function tagsOf(p){
+  const we=traitsOf(p).we,eg=egoOf(p),t=[];
+  if(we>=70)t.push('Gym rat');
+  if(eg>=68&&p.ovr>=50)t.push('Diva');
+  if(tempOf(p)>=70)t.push('Hothead');
+  if(eg<38&&we>=55&&!t.includes('Hothead'))t.push('Quiet pro');
+  if(isLeader(p)||(p.loyal>=.7&&eg<50))t.push('Glue guy');
+  if(we<32)t.push('Free spirit');
+  return t.slice(0,2);
+}
+const hasTag=(p,t)=>tagsOf(p).includes(t);
+// you learn a player's personality after he has settled in (fit 95%+) or once a story involves him
+const tagsKnown=p=>p.tid===S.userTid&&(gelOf(p)>=.95||p.tagSeen===p.tid);
+const tagPills=p=>tagsKnown(p)?tagsOf(p).map(t=>`<span class="pill muted" title="${TAG_TIP[t]}">${t}</span>`).join(' '):'';
+const lrChem=()=>{const v=(S.lrChem||[]).filter(c=>c.u>S.tick).reduce((s,c)=>s+c.v,0);return v?[['Locker room',clamp(v,-8,8)]]:[]};
+// each story: [key, who it is about (or null), [title, text, options]]; an option is [label, effects] where effects can be
+// p/q (mood of the two players), team (everyone else), chem [points, days], dev (his next summer), cash ($M cost), hype, loyal,
+// mins (minute target), block, heal, release ('buyout'), open (his page), roll {odds, win, lose, w (text), l (text)}
+const ST=()=>{
+  const u=S.userTid,ro=roster(u).filter(p=>!p.gl),healthy=ro.filter(p=>!p.inj),best=ro.slice().sort((a,b)=>b.ovr-a.ovr)[0],mem=S.lrMem||[];
+  const fresh=p=>!mem.includes('p'+p.pid),leaders=ro.filter(isLeader),mpg=p=>p.st.gp?p.st.min/p.st.gp:0,t=T(u),wp=t.w+t.l?t.w/(t.w+t.l):.5;
+  const first=a=>shuffle(a.filter(fresh))[0]||null,ln=lastName;
+  return [
+  ['shots',()=>{const p=first(healthy.filter(p=>p!==best&&p.ovr>=54&&(hasTag(p,'Diva')||egoOf(p)>=62)));return p&&[p]},([p])=>[`${ln(p)} wants the ball`,`${p.name} told reporters he "can't help the team standing in the corner." He wants more plays run for him.`,
+    [['Run more plays for him',{p:8,team:-1,chem:[-2,15]}],['Tell him to trust the system',{p:hasTag(p,'Quiet pro')?-1:-6,chem:[2,15]}],['Leave it to the coach',{p:-2}]]]],
+  ['clash',()=>{const p=first(healthy.filter(p=>hasTag(p,'Hothead')));if(!p)return null;const q=shuffle(healthy.filter(x=>x!==p&&x.ovr>=45))[0];return q&&[p,q]},([p,q])=>[`${ln(p)} and ${ln(q)} clash`,`${p.name} and ${q.name} had to be pulled apart at practice. Half the locker room is picking sides.`,
+    [['Fine them both',{p:-4,q:-4,chem:[2,20]}],[`Side with ${ln(q)}`,{p:-8,q:4}],['Hold a team meeting',{roll:{odds:leaders.length?.75:.4,win:{p:2,q:2,chem:[4,20]},lose:{chem:[-3,20]},w:'The air was cleared.',l:'The meeting turned into a shouting match.',tip:leaders.length?'your veteran leader helps':'better with a veteran leader'}}]]]],
+  ['late',()=>{const p=first(ro.filter(p=>p.age<=25&&(hasTag(p,'Free spirit')||traitsOf(p).we<45)));return p&&[p,leaders.find(x=>x!==p)||null]},([p,q])=>[`${ln(p)} late again`,`${p.name} showed up late to practice for the third time this month, out of breath and out of excuses.`,
+    [['Fine him and sit him a game',{p:-6,dev:.3,team:1}],q?[`Pair him with ${ln(q)}`,{p:-1,q:2,dev:.4}]:['Hire a skills coach to keep him on track',{cash:.4,dev:.3}],['Let it slide',{p:2,chem:[-2,15]}]]]],
+  ['buyout',()=>{const p=first(ro.filter(p=>p.age>=31&&(roleOf(p)??3)>=2&&moodOf(p)<60&&p.contract&&p.contract.amt<=15&&ro.length>13));return p&&[p]},([p])=>[`${ln(p)} asks for a buyout`,`${p.name} wants out so he can join a contender for one more run. He'd give back a quarter of what he's owed.`,
+    [['Grant the buyout',{release:'buyout',team:2}],['Ask him to stay as a mentor',{p:hasTag(p,'Glue guy')?2:-3,chem:[2,30]}],['Say no',{p:-10}]]]],
+  ['gym',()=>{const p=first(ro.filter(p=>p.age<=29&&hasTag(p,'Gym rat')));return p&&[p]},([p])=>[`${ln(p)} wants more`,`${p.name} has been at the facility at 6 a.m. every day and asks the team to pay for a personal trainer.`,
+    [['Pay for a personal trainer',{cash:.3,dev:.5,p:3}],['Open the facility around the clock for everyone',{cash:.8,team:1,chem:[2,30]}],['Not in the budget',{p:-3}]]]],
+  ['social',()=>{const p=first(ro.filter(p=>hasTag(p,'Diva')));return p&&[p]},([p])=>[`${ln(p)}'s late-night post`,`After a loss, ${p.name} posted a cryptic message that fans read as a shot at the coaching staff.`,
+    [['Talk to him privately',{p:3,chem:[-1,10]}],['Fine him publicly',{p:-8,team:1,chem:[2,15],hype:-1}],['Ignore it',{chem:[-3,15],hype:-1}]]]],
+  ['charity',()=>{const p=first(ro.filter(p=>hasTag(p,'Quiet pro')||hasTag(p,'Glue guy')));return p&&[p]},([p])=>[`${ln(p)}'s charity night`,`${p.name} runs a youth program in town and asks if the team can show up for its fundraiser on an off night.`,
+    [['The whole team goes',{team:2,chem:[3,20],hype:1,loyal:.5,cash:.1}],['Send a few players',{p:2,chem:[1,10]}],['The schedule is too tight',{p:-4}]]]],
+  ['rookie',()=>{const p=first(ro.filter(p=>p.draft&&p.draft.year>=S.season-1&&p.age<=23));if(!p)return null;const q=ro.filter(x=>x.age>=29).sort((a,b)=>leadOf(b)-leadOf(a))[0];return q&&[p,q]},([p,q])=>[`Rookie duty for ${ln(p)}`,`The veterans have ${p.name} carrying bags and buying breakfast. ${q.name} says it's tradition.`,
+    [['Let the veterans have their fun',{p:-3,q:2,chem:[2,20]}],['Shut it down',{p:3,q:-3}],[`Ask ${ln(q)} to take him under his wing`,{p:2,q:-1,dev:.3}]]]],
+  ['dinner',()=>{if(wp>=.45||t.w+t.l<12)return null;const q=first(leaders);return q&&[q]},([p])=>[`${ln(p)} wants to rally the group`,`The losses are piling up. ${p.name} wants to get everyone together away from the arena.`,
+    [['Pick up the tab for a team dinner',{cash:.1,chem:[4,15],team:2}],['Players-only meeting, no staff',{roll:{odds:.55,win:{chem:[5,15],p:2},lose:{chem:[-2,15]},w:'Players say it was the turning point.',l:'Word leaked that it got ugly.'}}],['Stay the course',{}]]]],
+  ['contract',()=>{if(S.day>=deadlineDay())return null;const p=first(ro.filter(p=>finalYear(p)&&p.ovr>=52));return p&&[p]},([p])=>[`${ln(p)}'s contract year`,`${p.name}'s agent says the contract talk is weighing on him. He wants to know where he stands.`,
+    [['Promise to talk after the season',{p:3}],['Open extension talks now',{p:2,open:true}],['Tell him to focus on basketball',{p:hasTag(p,'Quiet pro')?0:-5}]]]],
+  ['minutes',()=>{const p=first(healthy.filter(p=>p.ovr>=48&&p.st.gp>=10&&mpg(p)<expectMin(p)-4));return p&&[p]},([p])=>[`${ln(p)} wants minutes`,`${p.name} is averaging ${r1(mpg(p))} minutes and wants to know why. He says he can help.`,
+    [[`Raise his minute target to ${Math.round(Math.min(34,mpg(p)+6))}`,{p:5,mins:Math.round(Math.min(34,mpg(p)+6))}],['Explain his role',{p:hasTag(p,'Quiet pro')?1:-3}],['Put him on the trade block',{p:-4,block:true}]]]],
+  ['playhurt',()=>{const p=first(ro.filter(p=>p.inj&&p.inj.g<=5&&p.ovr>=55));return p&&[p]},([p])=>[`${ln(p)} wants to play`,`${p.name} is listed out ${p.inj.g} more game${p.inj.g>1?'s':''} with a ${injLc(p.inj.type)} but says he is ready now.`,
+    [['Let him play',{roll:{odds:.7,win:{p:3,heal:true},lose:{p:-2,hurt:true},w:'He came through fine.',l:'He aggravated the injury.'}}],['Follow the doctors',{p:hasTag(p,'Diva')?-4:-1}]]]]];
+};
+function storyHint(e,ev){
+  const P=pById(ev.pid),Q=ev.pid2!=null?pById(ev.pid2):null,ar=v=>v>0?'↑':'↓',o=[];
+  if(e.roll)return `a gamble: ${Math.round(e.roll.odds*100)}% it works${e.roll.tip?` (${e.roll.tip})`:''}`;
+  if(e.p&&P)o.push(`${lastName(P)} ${ar(e.p)}`);if(e.q&&Q)o.push(`${lastName(Q)} ${ar(e.q)}`);if(e.team)o.push(`teammates ${ar(e.team)}`);
+  if(e.chem)o.push(`chemistry ${ar(e.chem[0])} for ${e.chem[1]} days`);if(e.dev)o.push('helps his development');if(e.cash)o.push(`−${money(e.cash)}`);
+  if(e.hype)o.push(`fans ${ar(e.hype)}`);if(e.loyal)o.push('loyal fans ↑');if(e.mins)o.push('changes your rotation');if(e.block)o.push('teams start calling');
+  if(e.release)o.push(`he leaves; ${money(r1(P.contract.amt*.75))} a year stays on your cap`);if(e.open)o.push('opens his page');
+  return o.join(', ')||'no real effect';
+}
+function storyFx(e,ev){
+  const u=S.userTid,P=pById(ev.pid),Q=ev.pid2!=null?pById(ev.pid2):null,mood=(x,v)=>{if(x&&x.tid===u&&v)x.mood=clamp(Math.round(moodOf(x)+v),0,100)};
+  mood(P,e.p);mood(Q,e.q);
+  if(e.team)roster(u).forEach(x=>{if(x!==P&&x!==Q)mood(x,e.team)});
+  if(e.chem)S.lrChem=[...(S.lrChem||[]).filter(c=>c.u>S.tick),{v:e.chem[0],u:S.tick+e.chem[1]}];
+  if(e.dev&&P&&P.tid===u)P.lrDev={s:S.season,v:Math.round(((P.lrDev&&P.lrDev.s===S.season?P.lrDev.v:0)+e.dev)*10)/10};
+  if(e.cash){const b=T(u).biz;b.fin.exp.events=(b.fin.exp.events||0)+e.cash}
+  if(e.hype)hypeBump(u,e.hype);if(e.loyal)loyalBump(T(u),e.loyal);
+  if(e.mins&&P){const t=T(u),rot=t.rot=t.rot||{};rot.mins=rot.mins||{};rot.mins[P.pid]=e.mins}
+  if(e.block&&P)setBlk(P,'block');
+  if(e.heal&&P)P.inj=null;
+  if(e.hurt&&P&&!P.inj)injure(P);
+  if(e.release&&P&&P.tid===u){const amt=P.contract.amt;release(P);const d=T(u).dead[T(u).dead.length-1];if(d&&d.name===P.name&&d.amt===amt)d.amt=r1(amt*.75)}
+  if(e.open&&P&&P.tid===u)UI.player=P.pid;
+}
+function fireStory(){
+  if(S.userTid==null)return;
+  if(S.lr)answerStory(S.lr.opts.length-1,true); // too slow: the last option happens by default
+  const mem=S.lrMem||[],ok=[];
+  for(const [k,who,build] of ST())if(!mem.includes(k)){const w=who();if(w)ok.push([k,w,build])}
+  const e=pick(ok);if(!e)return;
+  const [k,w,build]=e,[title,text,opts]=build(w);
+  S.lr={id:(S.lrId=(S.lrId||0)+1),k,title,text,opts,pid:w[0].pid,pid2:w[1]?w[1].pid:null};
+  S.lrMem=[...mem,k,'p'+w[0].pid].slice(-8);
+}
+function answerStory(i,auto){
+  const ev=S.lr;if(!ev||!ev.opts[i])return;
+  const [label,e]=ev.opts[i];let fx=e,out='';
+  if(e.roll){const ok=rnd()<e.roll.odds;fx=ok?e.roll.win:e.roll.lose;out=ok?e.roll.w:e.roll.l}
+  S.lr=null;
+  storyFx(fx,ev);
+  const P=pById(ev.pid);if(P&&P.tid===S.userTid)P.tagSeen=P.tid;
+  const Q=ev.pid2!=null&&pById(ev.pid2);if(Q&&Q.tid===S.userTid)Q.tagSeen=Q.tid;
+  S.lrLog=[{s:S.season,title:ev.title,choice:label,out,auto:!!auto},...(S.lrLog||[])].slice(0,12);
+  news(`Locker room, ${lc1(ev.title)}: ${auto?'no decision in time, so ':''}${lc1(label)}.${out?' '+out:''}`);
+}
+function renderStory(){
+  const ev=S.lr;if(!ev)return '';
+  return `<div class="panel press biz-ev"><h3>Locker room · ${esc(ev.title)}</h3><p>${esc(ev.text)}</p>
+   <div class="answers">${ev.opts.map(([l,e],i)=>`<button class="btn answer" data-act="lrAns" data-arg="${i}"><span>${esc(l)}</span><small class="muted">${storyHint(e,ev)}</small></button>`).join('')}</div>
+   <p class="muted" style="font-size:.85rem">Left unanswered, the last option happens when the next story comes up.</p></div>`;
+}
+function storyBtn(){
+  const ev=S.lr;if(!ev||S.userTid==null)return '';
+  const fresh=ev.id>(UI.lrViewed||0);
+  return `<button class="btn offers-btn${fresh?' new':''}" data-act="lrShow" title="${fresh?'Something is going on in the locker room':'Open the locker room story'}">Locker room <span class="badge">1</span></button>`;
+}
+function storyAlert(){
+  const ev=S.lr;if(!ev||S.userTid==null)return;
+  if(UI.lrSeen==null){UI.lrSeen=ev.id;return}
+  if(ev.id<=UI.lrSeen)return;UI.lrSeen=ev.id;
+  if(UI.tab==='home'||UI.tab==='roster')return;
+  toastAct(`Locker room: ${ev.title}.`,'View','lrShow');
+}
+function renderLockerRoom(){
+  const ro=roster(S.userTid),known=ro.filter(p=>tagsKnown(p)&&tagsOf(p).length),log=S.lrLog||[],lc=lrChem()[0];
+  const unk=ro.filter(p=>!tagsKnown(p)).length;
+  return `<div class="panel"><div class="spread"><h2>Locker room</h2>${lc?`<span class="muted" style="font-size:.85rem">Recent stories: chemistry ${lc[1]>0?'+':''}${lc[1]}</span>`:''}</div>
+   <p class="muted">Personalities show once a player has settled in (fit 95%+) or after a story involves him. They decide which stories come up and how players react.</p>
+   ${known.length?`<div class="row" style="font-size:.9rem;gap:.4rem 1rem">${known.map(p=>`<span>${plink(p.pid,p.name)} ${tagPills(p)}</span>`).join('')}</div>`:'<p class="muted" style="font-size:.9rem">No personalities read yet.</p>'}
+   ${unk?`<p class="muted" style="font-size:.85rem">Still getting to know ${unk} player${unk>1?'s':''}.</p>`:''}
+   ${log.length?`<h3>Recent stories</h3><ul class="needs">${log.slice(0,6).map(x=>`<li><span><b>${esc(x.title)}</b> <span class="muted">(${x.s})</span>: ${esc(x.choice)}${x.auto?' <span class="muted">(by default)</span>':''}${x.out?` <span class="muted">${esc(x.out)}</span>`:''}</span></li>`).join('')}</ul>`:''}</div>`;
 }
 // ---------- development plans, the summer report and the lineup lab (v48) ----------
 const DP_INT={light:'Light',normal:'Normal',heavy:'Heavy'};
@@ -4245,6 +4372,7 @@ function talkPanel(p){
   const mb=(a,l,t)=>`<button class="btn small" data-act="meet" data-arg="${p.pid}:${a}" ${ready?'':'disabled'} title="${t}">${l}</button>`;
   const opts=promOpts(p),open=opts.filter(o=>!o[2]);
   return `<div class="panel" style="padding:.75rem"><h3>Talk to him</h3>
+   <p style="font-size:.9rem"><b>Personality:</b> ${tagsKnown(p)?(tagsOf(p).length?tagPills(p)+' <span class="muted" style="font-size:.85rem">'+tagsOf(p).map(t=>TAG_TIP[t]).join(' ')+'</span>':'<span class="muted">Nothing that stands out. A regular guy.</span>'):'<span class="muted">You will learn more once he has settled in.</span>'}</p>
    ${p.meetMsg?`<p style="font-size:.9rem"><i>${esc(p.meetMsg)}</i></p>`:''}
    <div class="row">${mb('praise','Praise him','A mood lift; it means less if you repeat it often')}${mb('challenge','Challenge him','Hard-working young players use it to improve over the summer; others may resent it')}${mb('future','Talk about his future','Find out what is bothering him and where his contract stands')}${ready?'':`<span class="muted" style="font-size:.85rem">Next meeting in ${MEET_GAP-(S.tick-p.meetT)} days.</span>`}</div>
    ${q?`<p style="font-size:.9rem"><b>Your promise:</b> ${promText(q)} ${q.bad?`<span class="warn">(${q.bad} of 3 bad weeks)</span>`:'<span class="good">(on track)</span>'}<br><span class="muted" style="font-size:.85rem">${esc(opts.find(o=>o[0]===q.k)[3])}</span></p>`
@@ -4309,7 +4437,7 @@ function rosterTable(list,view){
       ['mood','Mood',p=>moodOf(p),(v,p)=>`${moodTag(p)} <span class="num muted">${v}</span>`,'l'],['gel','Fit',p=>gelOf(p),v=>`<span class="${v<.8?'warn':''}">${Math.round(v*100)}%</span>`],
       ['notes','Notes',p=>(isLeader(p)?2:0)+(startPart(p)<0?1:0),(v,p)=>{const m=p.age<=23?mentorOf(p):null;return [isLeader(p)?'<span class="pill good" title="Lifts chemistry and mentors players 23 and under">Vet leader</span>':'',
         wantsStart(p)&&role(p)>0&&role(p)<4?(roleOK(p)?'<span class="pill good" title="Accepted a bench role this season">OK off the bench</span>':'<span class="pill warn">Wants to start</span>'):'',
-        p.tradeReq?'<span class="pill bad">Wants out</span>':'',myProm(p)?`<span class="pill" title="Your promise to him">Promised ${promText(p.prom)}</span>`:'',m?`<small class="muted">Mentor: ${esc(m.name)}</small>`:p.age<=23?'<small class="muted">No mentor</small>':''].filter(Boolean).join(' ')},'l']]};
+        p.tradeReq?'<span class="pill bad">Wants out</span>':'',tagPills(p),myProm(p)?`<span class="pill" title="Your promise to him">Promised ${promText(p.prom)}</span>`:'',m?`<small class="muted">Mentor: ${esc(m.name)}</small>`:p.age<=23?'<small class="muted">No mentor</small>':''].filter(Boolean).join(' ')},'l']]};
   COLS.dev=[['pot','Pot',p=>scoutPot(p),(v,p)=>isUnc(p)?`${potGrade(viewPot(p).v)} <span class="muted">${showV(viewPot(p))}</span>`:v],
     ['look','Outlook',p=>p.age<=24?{'Trending up':2,Steady:1,Stalling:0}[devOutlook(p)[0]]:-1,(v,p)=>{if(p.age>24)return '<span class="muted">–</span>';const [l,c]=devOutlook(p);return `<span class="${c}">${l}</span>`},'l'],
     ['we','Work ethic',p=>weKnown(p)?traitsOf(p).we:-1,(v,p)=>weKnown(p)?traitLabel(v):'<span class="muted">Unknown</span>','l'],
@@ -4415,7 +4543,7 @@ function renderRoster(){
   const ro=pos.length?all.filter(p=>pos.includes(p.pos)):all,one=UI.cmp.length===1&&pById(UI.cmp[0]);
   const intro={ratings:`Pot is your scouts' estimate; ▲▼ mark skills that moved 2+ last summer. Players in the last two years of a deal can be extended during the season, and players on expiring deals during free agency; winning teams get a discount, losing teams may get turned down. Releasing a player keeps his full salary on your cap until the contract ends.`,
     dev:`Players 27 and under can follow a plan: about +1.5 a summer in the chosen skill (more with the matching specialist coach, see the Staff tab) and -0.2 in the others. A heavy workload adds 40% to the plan and +0.3 to every skill, but raises injury risk 15% and wears on players without a strong work ethic; light halves the plan, trims injury risk and keeps everyone happy. Plans stack with the team focus on the Staff tab.`,stats:'This season\'s numbers. GmSc is game score, a one-number summary of a box score line.',contracts:'',role:'Role comes from your rotation. Fit is how well he knows the system (newcomers need games and practice). Players judge their role by the minutes they actually get.'}[v];
-  return `<div class="panel"><div class="spread"><h2>Roster</h2><span class="muted num">${all.length} players · payroll ${money(payroll(u))}${dead.length?` (incl. ${money(dead.reduce((s,d)=>s+d.amt,0))} dead money)`:''}</span></div>
+  return `${renderStory()}<div class="panel"><div class="spread"><h2>Roster</h2><span class="muted num">${all.length} players · payroll ${money(payroll(u))}${dead.length?` (incl. ${money(dead.reduce((s,d)=>s+d.amt,0))} dead money)`:''}</span></div>
   <div class="row" role="group" aria-label="Roster view">${[['ratings','Ratings'],['stats','Stats'],['contracts','Contracts'],['role','Role and morale'],['dev','Development']].map(([k,l])=>`<button class="btn small tog${v===k?' on':''}" data-act="rview" data-arg="${k}" aria-pressed="${v===k}">${l}</button>`).join('')}</div>
   <div class="row" role="group" aria-label="Position">${POSL.map(x=>`<button class="btn small tog${pos.includes(x)?' on':''}" data-act="rpos" data-arg="${x}" aria-pressed="${pos.includes(x)}">${x}</button>`).join('')}<span class="muted" style="font-size:.85rem">${pos.length?`${ro.length} of ${all.length} players`:'All positions'}</span></div>
   ${one?`<p class="callout" style="padding:.5rem .7rem;font-size:.9rem">Comparing <b>${esc(one.name)}</b>: pick a second player with Compare here, or on any player's page. <button class="btn small" data-act="cmpClear">Cancel</button></p>`:''}
@@ -4426,6 +4554,7 @@ function renderRoster(){
   ${renderDepth()}
   ${renderDevReport()}
   ${renderChem()}
+  ${renderLockerRoom()}
   ${renderRotation()}
   ${renderLineups()}
   <div class="panel"><h3>Your draft picks</h3><p class="muted">Projected slots use current records and roster ratings; picks further out are less certain (~).</p>${pickList(u)}</div>`;
@@ -5357,7 +5486,8 @@ function render(){showTip(null);
   app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():'');
   if(UI.offers||UI.tab==='home')UI.offerViewed=Math.max(UI.offerViewed||0,...liveOffers().map(o=>o.id));
   if(S.presser&&(UI.pressShow||UI.tab==='home'))UI.pressViewed=Math.max(UI.pressViewed||0,S.presser.id||0);
-  UI.offerToasted=false;offerAlert();if(!UI.offerToasted)pressAlert();
+  if(UI.tab==='home'||UI.tab==='roster')UI.lrViewed=Math.max(UI.lrViewed||0,S.lr?S.lr.id:0);
+  storyAlert();UI.offerToasted=false;offerAlert();if(!UI.offerToasted)pressAlert();
   const hdr=app.querySelector('.top');if(hdr)document.documentElement.style.setProperty('--hdr',hdr.offsetHeight+'px');
 }
 
@@ -5370,6 +5500,8 @@ document.addEventListener('click',e=>{
     case 'pickTeam':S.userTid=num;newOwner(num);pressMedia();news(`You took over the ${tname(num)}. Your owner: ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);UI.tab='home';break;
     case 'takeJob':takeJob(num);pressMedia();break;
     case 'presser':answerPress(num);if(!S.presser)UI.pressShow=false;break;
+    case 'lrAns':answerStory(num);break;
+    case 'lrShow':UI.tab='roster';UI.player=null;UI.offers=false;UI.pressShow=false;document.getElementById('toast').hidden=true;window.scrollTo(0,0);break;
     case 'pressShow':UI.pressShow=true;UI.offers=false;UI.player=null;UI.game=null;document.getElementById('toast').hidden=true;break;
     case 'closePress':UI.pressShow=false;break;
     case 'offerAccept':acceptOffer(num);break;
