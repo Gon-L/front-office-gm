@@ -69,6 +69,12 @@ select{border:1px solid var(--line);background:var(--surface);color:var(--ink);p
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:1rem;display:grid;gap:.75rem;align-content:start;min-width:0}
 .panel p{margin:0;max-width:75ch}
 .callout{border-left:4px solid var(--you-line);background:var(--you)}
+.own-id{display:flex;gap:.75rem;align-items:center}.own-id h2{margin:0}
+.own-av{display:inline-grid;place-items:center;flex:none;width:2.8rem;height:2.8rem;border-radius:50%;color:#fff;font-family:var(--display);font-weight:700;letter-spacing:.03em}
+.own-q{font-style:italic}.own-log li{display:block}
+.job-offers{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))}.job-card{border:1px solid var(--line);border-radius:10px;padding:.75rem;display:grid;gap:.35rem;align-content:start}
+.job-card small{display:block}.job-card .row{margin:0}.iv-q{font-size:1.05rem}
+.own-meters{display:flex;gap:1.2rem;flex-wrap:wrap}.own-bars{display:grid;grid-template-columns:1fr 1fr;gap:.4rem 1rem}@media(max-width:520px){.own-bars{grid-template-columns:1fr}}
 .tf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr));gap:.6rem .8rem;margin:.6rem 0}
 .tf-grid label{display:grid;gap:.2rem;font-size:.82rem;color:var(--muted);font-weight:600}
 .tf-grid select,.tf-grid input:not([type=checkbox]){width:100%;min-width:0;box-sizing:border-box}
@@ -472,7 +478,7 @@ function newLeague(){
     (DEAD0[t.abbr]||[]).forEach(d=>t.dead.push({...d}));
   }
   for(let y=0;y<4;y++)addPicks(S.season+y);
-  setupStaff();
+  setupStaff();seedOwners();
   setupBusiness();
   seedRivalries();
   genDraftClass(); // generated names start with the first draft class
@@ -1143,6 +1149,7 @@ function milestones(C,D,pts,opp){
     const newHi=[['pts','points',20],['reb','rebounds',12],['ast','assists',10]].filter(([k,,min])=>b[k]>hi[k]&&b[k]>=min&&hi[k]>0);
     for(const k of ['pts','reb','ast'])if(b[k]>hi[k])hi[k]=b[k];
     const td=b.pts>=10&&b.reb>=10&&b.ast>=10;
+    if(you&&b.pts>=45&&S.phase==='regular')ownQ('big',{name:p.name,pts:b.pts});
     if(b.pts>=60||(b.pts>=55&&!you))news(`${p.name} (${T(C.tid).abbr}) scored ${b.pts} points ${vs}.`);
     else if(you&&b.pts>=40)news(`${p.name} scored ${b.pts} ${vs}${pts>opp?' in a win':''}.`);
     else if(you&&td)news(`${p.name} had a triple-double ${vs}: ${b.pts} points, ${b.reb} rebounds, ${b.ast} assists.`);
@@ -1174,6 +1181,7 @@ function injure(p){
   if(p.tid===S.userTid){
     news(`${p.name} is out ${g} game${g>1?'s':''} with ${withInj(x[0])}.`);
     if(g>=20&&S.phase==='regular'&&roster(p.tid).sort((a,b)=>b.ovr-a.ovr).indexOf(p)<3)pressInjury(p,x[0],g);
+    if(g>=20&&S.phase==='regular'&&roster(p.tid).sort((a,b)=>b.ovr-a.ovr).indexOf(p)<2)ownTry('inj',{name:p.name},.8,true);
   }
   else if(p.ovr>=60&&g>=10)news(`${T(p.tid).abbr}'s ${p.name} is out ${g} games with ${withInj(x[0])}.`);
 }
@@ -1237,6 +1245,7 @@ function simDays0(n){
       }
       const rival=rivOf(g.h,g.a)>=RIVAL; // rivalry games sell more tickets and swing hype twice as hard
       const full=homeGame(H,g,rival); // tickets, promo nights and the crowd
+      if(g.h===S.userTid)ownCrowd(full);
       if(full<EMPTY)hypeBump(g.h,-(EMPTY-full)*1.2); // empty seats sour the mood
       dealBonus(r.hs>r.as?g.h:g.a,'perW');
       // national TV: exposure money for both sides, a little hype, and the result travels further
@@ -1253,6 +1262,7 @@ function simDays0(n){
         if(S.day>=8&&S.day-(S.pressMem.beatDay??-99)>=10&&!S.presser&&rnd()<.45)pressBeat(); // the beat writers, every couple of weeks
         const opp=g.h===S.userTid?g.a:g.h,seen=S.season+':'+opp;
         if(rival&&!S.pressMem.seen[seen]&&rnd()<.5){S.pressMem.seen[seen]=1;pressRivalry(opp,won)} // once per rival per season
+        ownGame(won,opp,rival);
       }
     }
     if(cupOn())cupDay(S.day);
@@ -1261,6 +1271,7 @@ function simDays0(n){
     S.day++;
     if(S.day%16===8&&S.day<S.sched.length-3)fireBizEvent(); // a business decision every couple of weeks
     if(S.day%20===12&&S.day<S.sched.length-3&&rnd()<.75)fireStory(); // a locker room story every few weeks
+    ownSeasonDay();
     awardDay();
     if(cupOn()&&S.day<S.sched.length)cupSetup(S.day);
     if(S.day===tvFlexDay()&&S.userTid!=null){
@@ -1514,7 +1525,7 @@ const BIZ_EVENTS=[
   ['rival',()=>S.teams.some(x=>x.tid!==S.userTid&&rivOf(S.userTid,x.tid)>=RIVAL),()=>{const r=S.teams.filter(x=>x.tid!==S.userTid).sort((a,c)=>rivOf(S.userTid,c.tid)-rivOf(S.userTid,a.tid))[0];
     return ['Billboard war',`The ${r.nick} put up a billboard mocking your team two blocks from your arena.`,
     [['Fire back with your own',{cash:-.4,hype:2,riv:{tid:r.tid,v:3}}],['Take the high road',{loyal:1}],['Ignore it',{hype:-.3}]]]}],
-  ['courtside',()=>!!S.owner,()=>['Courtside seats','The owner wants free courtside seats for friends for the rest of the season.',
+  ['courtside',()=>!!S.owner,()=>['Courtside seats',`${ownName()} wants free courtside seats for friends for the rest of the season.`,
     [['Of course',{cash:-.4,sec:3}],['Offer a suite instead',{cash:-.15,sec:1}],['No, those seats are sold',{sec:-2}]]]],
   ['shoe',()=>roster(S.userTid).some(p=>{const r=jerseyRank(p.pid);return r&&r<=10}),()=>{const p=roster(S.userTid).filter(x=>{const r=jerseyRank(x.pid);return r&&r<=10}).sort((a,c)=>jerseyRank(a.pid)-jerseyRank(c.pid))[0];
     return [`${p.name}'s signature shoe`,`${p.name}'s shoe company wants to launch his new signature shoe at your arena.`,
@@ -1560,7 +1571,7 @@ function renderBizEv(){
 // ---------- the owner ----------
 const OWNER_TYPES={win:'Win-now owner',profit:'Bottom-line owner',patient:'Patient owner'};
 // payroll the owner will approve
-const ownerLimit=()=>S.owner?({win:221.7,profit:TAX,patient:TAX+10})[S.owner.type]+((S.owner.bonus&&S.owner.bonus.pay)||0):Infinity;
+const ownerLimit=()=>S.owner?({win:221.7,profit:TAX,patient:TAX+10})[S.owner.type]+((S.owner.bonus&&S.owner.bonus.pay)||0)+(otr('pinch')?-5:0)+(otr('spender')?6:0):Infinity;
 function expectedWins(tid){const avg=S.teams.reduce((s,t)=>s+teamOvr(t.tid),0)/30;return Math.round(clamp(41+(teamOvr(tid)-avg)*4.5,15,65))}
 function setGoals(){
   if(!S.owner)return;
@@ -1569,7 +1580,12 @@ function setGoals(){
   if(o.type==='profit'){g.push({k:'profit',t:20,w:30});g.push({k:'tax',w:20});g.push({k:'wins',t:Math.max(18,W-6),w:15})}
   if(o.type==='patient'){g.push({k:'hype',t:Math.min(95,Math.round(hype+3)),w:15});g.push({k:'noloss',t:-10,w:15});g.push({k:'wins',t:Math.max(15,W-8),w:15})}
   if(o.ease){const w=g.find(x=>x.k==='wins');if(w)w.t=Math.max(10,w.t-o.ease);o.ease=0} // a patience request from the summer
+  if(otr('pinch'))g.forEach(x=>{if(x.k==='profit'||x.k==='noloss')x.w=Math.round(x.w*1.5)});
+  if(otr('competitor'))g.forEach(x=>{if(x.k==='playoffs'||x.k==='round2')x.w+=5});
+  if(otr('impatient')){const w=g.find(x=>x.k==='wins');if(w)w.t+=2}
+  if(otr('showman')&&!g.some(x=>x.k==='hype'))g.push({k:'hype',t:Math.min(95,Math.round(hype+2)),w:10});
   if(o.extra){if(!g.some(x=>x.k===o.extra.k))g.push(o.extra);o.extra=null} // strings attached to a summer request
+  planGoals(g);
   o.goals=g;o.season=S.season;
 }
 function goalText(gl){
@@ -1581,6 +1597,8 @@ function goalText(gl){
     case 'tax':return 'Stay under the luxury tax';
     case 'hype':return `Raise fan hype to ${gl.t}`;
     case 'noloss':return `Don't lose more than ${money(-gl.t)}`;
+    case 'conf':return 'Reach the conference finals';
+    case 'young':return `Have ${gl.t} players 24 or under rated 55+`;
   }
 }
 // [met?, live status line]
@@ -1593,33 +1611,647 @@ function goalStatus(gl){
     case 'profit':case 'noloss':return [fin.profit>=gl.t,`${money(fin.profit)} so far`];
     case 'tax':return [t.biz.fin.exp.tax===0&&payroll(S.userTid)<=TAX,`Payroll ${money(payroll(S.userTid))}`];
     case 'hype':return [t.biz.hype>=gl.t,`Hype ${Math.round(t.biz.hype)}`];
+    case 'conf':{const r=S.po?roundReached(S.userTid):null;return [['Conference finals','Lost in Finals','Champion'].includes(r),r||'Season in progress']}
+    case 'young':{const ys=roster(S.userTid).filter(p=>p.age<=24&&p.ovr>=55);return [ys.length>=gl.t,ys.length?ys.map(p=>lastName(p)).join(', '):'None yet']}
   }
 }
 // end-of-season review: met goals add security, missed ones cost it
 function reviewOwner(){
   if(!S.owner)return;
   const o=S.owner,lines=[];let delta=0;
-  const first=!o.hist.some(h=>h.tid===S.userTid); // honeymoon: first-season misses count half
-  for(const gl of o.goals){const [ok]=goalStatus(gl),v=ok?Math.round(gl.w*.6):-Math.round(gl.w*(o.type==='patient'?.6:1)*(first?.5:1));delta+=v;lines.push(`${ok?'Met':'Missed'}: ${goalText(gl)} (${v>0?'+':''}${v})`)}
-  if(S.po&&S.po.champ===S.userTid){delta+=30;lines.push('Won the championship (+30)')}
+  if(o.msg)ownAnswer(o.msg.opts.length-1,true);
+  const first=(o.nrev||0)<(otr('loyal')?2:1); // honeymoon: first-season misses count half (two seasons with a Loyal owner)
+  const sw=otr('handsoff')?.85:1,miss=(o.type==='patient'?.6:1)*(otr('impatient')?1.25:1);
+  let books=null;
+  for(const gl of o.goals){const [ok]=goalStatus(gl),v=ok?Math.round(gl.w*.6*sw):-Math.round(gl.w*miss*sw*(first?.5:1));delta+=v;lines.push(`${ok?'Met':'Missed'}: ${goalText(gl)} (${v>0?'+':''}${v})`);if(gl.k==='profit'||gl.k==='noloss')books=ok}
+  const champ=S.po&&S.po.champ===S.userTid,tb=otr('competitor')?40:30;
+  if(champ){delta+=tb;lines.push(`Won the championship (+${tb})`)}
+  if(o.dm)dmSettle(false,'We ran out of season.');
+  for(const p of (o.pl||[]).filter(p=>p.k==='playoffs')){const before=o.security;lines.push(settlePledge(p,!!(S.po&&S.po.seeded.includes(S.userTid))));delta+=o.security-before;o.security=before}
+  o.pl=[];o.nrev=(o.nrev||0)+1;
+  const dl=gmDeal();if(delta<0&&dl.s0===S.season&&!dl.ext){const d2=Math.round(delta*.85);if(d2!==delta){lines.push(`First season of a new contract (${d2-delta>0?'+':''}${d2-delta})`);delta=d2}}
+  if(delta<0){const d2=Math.round(delta*trustSoft());if(d2!==delta){lines.push(`Trust ${trustOf()} (${trustWord(trustOf()).toLowerCase()}) ${d2>delta?'softened':'deepened'} the review (${d2-delta>0?'+':''}${d2-delta})`);delta=d2}}
   o.security=clamp(o.security+delta,0,100);
+  if(o.ult&&o.ult.s===S.season){const ok=ultMet(o.ult);lines.push(`${ok?'Survived':'Failed'} the ultimatum: ${lc1(ultText(o.ult))}${ok?' (+8)':''}`);if(ok)o.security=clamp(o.security+8,0,100);else o.security=0;o.ult=null}
+  const lim=ownerLimit();if(payroll(S.userTid)<=lim)trustAdd(3,'Stayed within the payroll limit');else trustAdd(-5,`Payroll ended above the ${money(lim)} limit`);
+  if(champ)trustAdd(6,'Won the championship');else if(delta>=12)trustAdd(3,'A strong season');else if(delta<=-15)trustAdd(-3,'A bad season');
   o.met=null;if(o.bonus){o.bonus.pay=0;if(o.bonus.staffLeft&&--o.bonus.staffLeft<=0)o.bonus.staff=0} // a new year of meetings
-  o.hist.unshift({s:S.season,tid:S.userTid,delta,security:o.security,lines});
-  news(`Owner review: job security ${delta>=0?'up':'down'} ${Math.abs(delta)} to ${o.security}.`,1);
+  const q=ownQuote(delta,champ,o.security<=0,books);
+  o.hist.unshift({s:S.season,tid:S.userTid,delta,security:o.security,lines,q,who:ownName()});
+  news(`Owner review: job security ${delta>=0?'up':'down'} ${Math.abs(delta)} to ${o.security}. ${ownName()}: "${q}"`,1);
   if(o.security<=0){
     const pool=S.teams.filter(t=>t.tid!==S.userTid).sort((a,b)=>pct(a)-pct(b)).slice(0,12).map(t=>t.tid);
     S.fired={from:S.userTid,offers:shuffle(pool).slice(0,3)};
-    news(`You were fired by the ${tname(S.userTid)}.`);
+    news(`You were fired by the ${tname(S.userTid)}. ${ownName()}: "${q}"`);
+    if(o.interim&&o.interim.s===S.season)news(`${o.interim.name} takes over as interim general manager of the ${tname(S.userTid)}.`);
   }
+  gmSummer(champ);
 }
-function newOwner(tid){S.owner={type:pick(Object.keys(OWNER_TYPES)),security:55,goals:[],hist:(S.owner&&S.owner.hist)||[],season:S.season};setGoals()}
+function newOwner(tid){const id=T(tid).own||(T(tid).own=genOwnerId());S.owner={type:id.type,security:id.tr.includes('loyal')?62:55,trust:id.tr.includes('loyal')?55:50,tlog:[],dlog:[],dm:null,goals:[],hist:(S.owner&&S.owner.hist)||[],season:S.season,nrev:0,log:[],pl:[]};S.ownQ=[];newDeal(gmBase(tid),3);setGoals();ownFire('intro');proposePlan()}
 function takeJob(tid){
   S.userTid=tid;S.fired=null;UI.tab='home';clearTrade();UI.tradeTid=null;UI.finder=null;UI.renounce.clear();UI.planAdds=[];
-  newOwner(tid);news(`You took over the ${tname(tid)}.`);
+  newOwner(tid);news(`You took over the ${tname(tid)}. Your owner: ${ownName()}, ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);
   if(S.phase==='draft')aiDraftUntilUser();
 }
-// ---------- owner meetings ----------
+// ---------- owner identities and messages (v53) ----------
+// every team has an owner (T(tid).own): name, age, background, type and two traits. Your owner's relationship
+// (security, goals, promises, messages) lives in S.owner and resets when you change teams.
+const OWN_FIRST=['Patricia','Richard','Elena','Marcus','Diane','Victor','Gloria','Harold','Naomi','Stanley','Vivian','Raymond','Celeste','Gordon','Ingrid','Leonard','Margaret','Desmond','Yolanda','Arthur','Simone','Franklin','Beatrice','Warren','Priya','Theodore','Camille','Wallace','Mei','Rafael','Hollis','Bernard','Lucia','Conrad','Adaeze','Sterling'];
+const OWN_LAST=['Whitmore','Castellano','Ashford','Kingsley','Bramwell','Okonkwo','Delacroix','Hargrove','Vandermeer','Rosenthal','Calloway','Fairbanks','Lindgren','Montague','Abernathy','Takahashi','Pemberton','Valdez','Harrington','Beaumont','Osei','Kessler','Rutherford','Marchetti','Crane','Ellsworth','Blackwood','Sutherland','Achterberg','Prescott'];
+const OWN_BG={tech:['Tech founder','Made a fortune building software and runs the team like a startup.'],
+  family:['Old family money','The team has been in the family for decades.'],
+  pe:['Private equity','Leads the investment group that bought the team as an asset.'],
+  star:['Former player','Played in the league, then bought a piece of the team, then all of it.'],
+  media:['Media mogul','Owns TV stations and streaming deals, and loves a headline.'],
+  real:['Real estate','Built half the skyline downtown and has big plans for the arena.'],
+  energy:['Energy money','Made a fortune in oil and gas and hates losing at anything.']};
+const OWN_TR={meddler:['Meddler','Weighs in on everything: more messages and demands, and a no costs 5.'],
+  handsoff:['Hands-off','Leaves basketball to you: few messages, rare demands, and reviews swing 15% less.'],
+  pinch:['Penny-pincher','Payroll limit $5M lower, profit goals count 50% more, and a hard sell on spending.'],
+  spender:['Big spender','Payroll limit $6M higher and an easier yes on payroll.'],
+  showman:['Showman','Wants stars and a buzzing arena: a hype goal, and big signings earn job security.'],
+  impatient:['Impatient','Missed goals cost 25% more and patience is a hard sell.'],
+  loyal:['Loyal','You start at 62 job security and get two honeymoon seasons.'],
+  competitor:['Competitor','Hates losing to rivals. Playoff goals are worth 5 more and a title adds 40.']};
+const OWN_CLASH=[['meddler','handsoff'],['pinch','spender'],['impatient','loyal']];
+const OWN_TYPE_TR={win:{spender:3,competitor:3,impatient:2,showman:2,meddler:2,pinch:.3,loyal:1,handsoff:1},
+  profit:{pinch:4,handsoff:2,meddler:2,impatient:1.5,showman:1,spender:.2,competitor:1,loyal:1},
+  patient:{loyal:4,handsoff:3,showman:1,competitor:1,pinch:1.5,spender:1,meddler:.7,impatient:.2}};
+function genOwnerId(){
+  const type=pick(Object.keys(OWNER_TYPES)),w=OWN_TYPE_TR[type],tr=[];
+  const clash=k=>OWN_CLASH.some(c=>c.includes(k)&&c.some(x=>x!==k&&tr.includes(x)));
+  while(tr.length<2)tr.push(wpick(Object.keys(w),k=>tr.includes(k)||clash(k)?0:w[k]));
+  const taken=new Set(S.teams.map(t=>t.own&&t.own.name));let name;
+  for(let i=0;i<20;i++){name=pick(OWN_FIRST)+' '+pick(OWN_LAST);if(!taken.has(name))break}
+  return {name,age:42+Math.floor(rnd()*36),bg:pick(Object.keys(OWN_BG)),type,tr,since:S.season-1-Math.floor(rnd()*24)};
+}
+function seedOwners(){S.teams.forEach(t=>{if(!t.own)t.own=genOwnerId()})}
+const ownId=(tid=S.userTid)=>tid!=null&&T(tid)&&T(tid).own||null;
+const ownName=(tid=S.userTid)=>{const o=ownId(tid);return o?o.name:'Your owner'};
+const otr=k=>{const o=ownId();return !!(o&&S.owner)&&o.tr.includes(k)};
+const ownTypeShort={win:'Win-now',profit:'Bottom-line',patient:'Patient'};
+const ownTraitTxt=o=>o.tr.map(k=>OWN_TR[k][0]).join(', ');
+const ownInit=n=>n.split(' ').map(x=>x[0]).join('');
+const ownAv=tid=>`<span class="own-av" style="background:${T(tid).hue<0?'hsl(0 0% 25%)':`hsl(${T(tid).hue} 45% 32%)`}" aria-hidden="true">${esc(ownInit(ownName(tid)))}</span>`;
+const ownLine=tid=>{const o=ownId(tid);return o?`Owner ${esc(o.name)}: ${ownTypeShort[o.type]}, ${esc(ownTraitTxt(o).toLowerCase())}${o.since>=S.season-1&&(T(tid).ownHist||[]).length?' (new)':''}${T(tid).reloc?' · arena fight':''}`:''};
+// how the owner feels today: job security plus recent form
+function ownMood(){
+  const o=S.owner,t=T(S.userTid),form=S.phase==='regular'?clamp((t.streak||0)*2,-10,10):0,v=o.security+form;
+  return v>=80?['Thrilled','good']:v>=60?['Pleased','good']:v>=40?['Watching','warn']:v>=20?['Worried','warn']:['Furious','bad'];
+}
+const ownNoCost=()=>otr('meddler')?5:otr('handsoff')?2:3;
+function secAdd(v){if(S.owner&&v)S.owner.security=clamp(Math.round(S.owner.security+v),0,100)}
+// a reply's job-security effect: a number or one per owner type; Meddlers take bad news harder, Hands-off owners shrug
+function ownSec(e){
+  let v=e.sec==null?0:typeof e.sec==='number'?e.sec:(e.sec[S.owner.type]||0);
+  if(v<0&&otr('meddler'))v*=1.5;if(otr('handsoff'))v*=.7;
+  return Math.round(v);
+}
+// promises to the owner: run (a .500 stretch over the next 10 games), tax (under the tax by the deadline), playoffs (checked at the review)
+const PLEDGE_TXT={run:'Win at least 5 of the next 10 games',tax:'Get under the luxury tax by the trade deadline',playoffs:'Make the playoffs'};
+const PLEDGE_FX={run:[3,-4],tax:[3,-5],playoffs:[4,-7]};
+function addPledge(k){
+  const o=S.owner,t=T(S.userTid);o.pl=(o.pl||[]).filter(p=>p.k!==k);
+  o.pl.push(k==='run'?{k,w0:t.w,g0:t.w+t.l}:{k});
+}
+function settlePledge(p,ok){
+  const o=S.owner,[up,down]=PLEDGE_FX[p.k],v=ok?up:down;o.pl=(o.pl||[]).filter(x=>x!==p);secAdd(v);
+  trustAdd(ok?5:-7,`${ok?'Kept':'Broke'} a promise: ${lc1(PLEDGE_TXT[p.k])}`);
+  const say={run:['You said we would turn it around, and you did.','Ten games, and I still have not seen the turnaround you promised.'],
+    tax:['We are under the tax. Thank you for listening.','We are still over the tax. You told me we would not be.'],
+    playoffs:['You promised the playoffs and delivered.','You promised me the playoffs.']}[p.k][ok?0:1];
+  ownLog(ok?'A promise kept':'A promise broken',say,`job security ${v>0?'+':''}${v}, trust ${ok?'+5':'-7'}`);
+  return `${ok?'Kept':'Broke'} a promise: ${lc1(PLEDGE_TXT[p.k])} (${v>0?'+':''}${v})`;
+}
+// a note in the owner's message log (and in Alerts while a sim runs)
+function ownLog(title,text,fx){
+  const o=S.owner;if(!o)return;
+  o.log=[{s:S.season,d:noteWhen(),title,text,fx:fx||''},...(o.log||[])].slice(0,12);
+  if(NOTE.depth)noteAdd(`${ownName()}: "${text}"${fx?` (${fx})`:''}`,'Owner','tab','business');
+}
+// things that happen outside a sim (a trade, a signing) wait for the next sim day
+function ownQ(k,d){if(S.userTid==null||!S.owner)return;S.ownQ=[...(S.ownQ||[]).filter(x=>x.k!==k),{k,d,t:S.tick}]}
+function ownDay(){
+  dmCheck();
+  const q=S.ownQ||[];if(!q.length||!S.owner)return;S.ownQ=[];
+  for(const x of q)if(S.tick-x.t<=14){if(x.k==='big')ownTry('big',x.d,.7);else ownFire(x.k,x.d)}
+}
+const OWN_CAP={streak:2,skid:2,big:2,rival:3,inj:2};
+const ownFreq=()=>otr('meddler')?1.5:otr('handsoff')?.45:1;
+// try to send a message: odds scaled by the owner's habits, at most one every 4 days unless it's urgent
+function ownTry(k,d,p,urgent){
+  const o=S.owner;if(!o||S.userTid==null)return;
+  if(!urgent&&S.tick-(o.last??-99)<4)return;
+  if(o.cnt&&o.cnt.s!==S.season)o.cnt=null;const c=o.cnt=o.cnt||{s:S.season};
+  if((c[k]||0)>=(OWN_CAP[k]||9))return; // the same kind of note gets old fast
+  if(rnd()>=Math.min(1,p*ownFreq()))return;
+  c[k]=(c[k]||0)+1;ownFire(k,d);
+}
+function ownFire(k,d){
+  const o=S.owner;if(!o)return;const m=ownMsg(k,d||{});if(!m)return;
+  const [title,text,opts,sec]=m;o.last=S.tick;
+  const v0=sec?ownSec({sec}):0;secAdd(v0);const fx=v0?`job security ${v0>0?'+':''}${v0}`:'';
+  if(opts&&opts.length){
+    if(o.msg)ownAnswer(o.msg.opts.length-1,true); // too slow: the last reply goes out by default
+    o.msg={id:(S.ownId=(S.ownId||0)+1),k,d:d||{},title,text,opts,fx,v:v0};
+  }else ownLog(title,text,fx);
+}
+function ownAnswer(i,auto){
+  const o=S.owner,m=o&&o.msg;if(!m||!m.opts[i])return;
+  const [label,e]=m.opts[i],v=ownSec(e);o.msg=null;
+  secAdd(v);if(e.pledge)addPledge(e.pledge);
+  if(e.tr)trustAdd(e.tr,`Your reply: "${label}"`);
+  if(auto&&!e.dem)trustAdd(-2,'Left a message unanswered');
+  const t=T(S.userTid),b=t.biz;
+  if(e.price)b.price=Math.max(10,Math.round(b.price*e.price));
+  if(e.cash)b.fin.exp.events=(b.fin.exp.events||0)+e.cash;
+  if(e.hype)hypeBump(S.userTid,e.hype);
+  const net=(m.v||0)+v,fx=[net?`job security ${net>0?'+':''}${net}`:'',e.pledge?'promise made':'',e.dem&&e.dem!=='no'?'you agreed':'',e.dem==='no'?`job security ${dmNoCost()[0]}, trust ${dmNoCost()[1]}`:''].filter(Boolean).join(', ');
+  o.log=[{s:S.season,d:noteWhen(),title:m.title,text:m.text,reply:label,auto:!!auto,fx},...(o.log||[])].slice(0,12);
+  news(`You ${auto?'never answered':'answered'} ${ownName()}${auto?'':`: "${label}"`}${v?` (job security ${v>0?'+':''}${v})`:''}.`);
+  if(e.dem)dmAnswer(m.k.slice(2),m.d,e.dem,auto);
+  if(e.gm)gmAnswer(e,m.d,auto);
+  if(e.plan){const o=S.owner,pf=planPref(o.type);
+    if(e.plan===pf)planSet(pf,`You agreed to ${ownName()}'s three-year plan: ${PLANS[pf][0].toLowerCase()}.`);
+    else if(rnd()*100<planOdds())planSet(e.plan,`${ownName()} agreed to your three-year plan: ${PLANS[e.plan][0].toLowerCase()}.`);
+    else{trustAdd(-2,'Pushed back on the three-year plan');planSet(pf,`${ownName()} would not change the plan: ${PLANS[pf][0].toLowerCase()} it is.`);ownLog('The plan stands','I heard you. The plan stays the way I wrote it.','trust -2')}}
+}
+// [title, text, reply options or null, job security from the message itself]
+function ownMsg(k,d){
+  const o=S.owner,ty=o.type,u=S.userTid,t=T(u),id=ownId(),by=(w,p,q)=>({win:w,profit:p,patient:q})[ty];
+  const goals=o.goals.map(g=>lc1(goalText(g))).join(', ');
+  if(k.startsWith('d:'))return dmMsg(k.slice(2),d);
+  if(k==='checkin'){
+    const on=o.goals.filter(goalPace).length,n=o.goals.length,gl=`${on} of my ${n} goal${n>1?'s':''} ${on===1?'is':'are'} on track`;
+    if(d.kind==='vote')return ['The All-Star break',`Halfway there, and ${gl}. I want you to hear it from me: you have my full support. Keep going.`,null,3];
+    if(d.kind==='warn')return ['The All-Star break',`Halfway there, and ${gl}. I am not happy. This is a warning, not a threat. Yet.`,
+      [['Understood. I will make the playoffs.',{pledge:'playoffs',sec:1}],['Judge me at the end of the season.',{sec:-1,tr:1}],['We are closer than it looks.',{sec:by(0,-1,1)}]]];
+    return ['An ultimatum',`Halfway there, and ${gl}. I will be blunt: ${lc1(ultText(d.u))}, or you are done here. ${o.security<25&&o.interim?`${o.interim.name.split(' ')[0]} is ready to step in.`:''}`.trim(),
+      [['I will get it done.',{tr:1}],['That is not fair, and you know it.',{sec:-2,tr:-2}]]];
+  }
+  if(k==='plan'){const p=o.plan,pf=p.k,alts=Object.keys(PLANS).filter(x=>x!==pf),yrs=`${p.s0}-${p.s0+2}`;
+    return ['The three-year plan',`Here is where I want us by ${p.s0+2}: ${PLANS[pf][0].toLowerCase()}. ${PLANS[pf][1]} ${by('I did not buy this team to wait.','A team that loses money is a hobby, not a business.','Patience, as long as I can see the progress.')}`,
+      [...alts.map(a=>[`Counter: ${PLANS[a][0].toLowerCase()} (${yrs})`,{plan:a}]),[`Agree: ${PLANS[pf][0].toLowerCase()} (${yrs})`,{plan:pf,tr:2}]]]}
+  if(k==='newowner'){const n=id;
+    return [d.why==='heir'?'A new generation':'New ownership',d.why==='heir'?`${d.old} built this team, and now it is mine. I have watched your work. Your contract stands, but I am going to do things my way.`
+      :`I bought this team ${by('to win championships','because it should make money','to build something that lasts')}. I have read up on you. Your contract stands, but you work for me now.`]}
+  if(k==='renew')return ['Your contract',`Your deal is up. I want you back: ${d.yrs} years at ${money(d.sal)} a season. ${o.security>=75?'You have earned it.':'Let us keep building.'}`,
+    [['Ask for more.',{gm:'more'}],['No thanks. I am moving on.',{gm:'leave'}],[`Sign it: ${d.yrs} years, ${money(d.sal)}.`,{gm:'sign'}]]];
+  if(k==='extend')return ['An extension',`One year left on your deal, and I do not want you going anywhere. ${d.yrs} more years at ${money(d.sal)} a season.`,
+    [['Ask for more.',{gm:'extmore'}],['Not now. Let us see how this year goes.',{gm:'later'}],[`Sign it: ${d.yrs} more years at ${money(d.sal)}.`,{gm:'extsign'}]]];
+  if(k==='poach'){const oi=ownId(d.tid);
+    return ['A call from another owner',`I hear ${oi?oi.name:'another owner'} of the ${tname(d.tid)} called you, offering ${money(d.sal)} a season. ${by('Champions do not leave.','I know what you are worth to me.','We built this together.')} Are you staying?`,
+      [[`Take the ${T(d.tid).nick} job.`,{gm:'take'}],['Use it to get a raise.',{gm:'lev'}],['I am staying.',{gm:'stay'}]]]}
+  switch(k){
+    case 'intro':return ['Welcome aboard',`Welcome to the ${t.nick}. ${by("I didn't get into this to finish in the middle. I want to win, and I'll pay for it.",'This team is a business. Run it like one and we will get along fine.','I am in this for the long haul. Build something that lasts and keep the fans with us.')}${otr('meddler')?' I like to stay in the loop, so expect to hear from me.':otr('handsoff')?" You won't hear from me much. Take that as a compliment.":''}${goals?` This season: ${goals}.`:''}`];
+    case 'season':return [`The ${S.season} season`,`${by('New season, same standard.','New season. I have looked at the budget.','Another year of building.')} Here is what I want: ${goals}.${otr('showman')?' And fill that arena.':''}`];
+    case 'skid':return ['Losing streak',by(`${d.n} straight losses. I didn't buy this team to watch it lose. What's the plan?`,`${d.n} straight losses and the ticket office is taking angry calls. What's the plan?`,`Rough stretch. I know we're building, but the fans need something to hold on to. Talk to me.`),
+      [['We will turn it around. Give me ten games.',{sec:1,pledge:'run'}],["It's a long season. Trust the process.",{sec:by(-2,-1,2)}],['Honestly? This roster has holes.',{sec:by(1,-2,-1),tr:2}]]];
+    case 'streak':return ['Winning streak',`${d.n} in a row! ${by('This is what I pay for.','The phones at the ticket office will not stop ringing.','The city is starting to believe.')}${otr('showman')?' Everybody wants to be at our games.':''}`,
+      [['Thanks. We are just getting started.',{sec:1}],['Long way to go. We stay level.',{sec:by(-1,0,1)}]],otr('handsoff')?0:1];
+    case 'trade':{
+      const good=by(d.dOvr>=1,d.dPay<=-3,d.dAge<=-1.5||d.picks>0),bad=by(d.dOvr<=-1,d.dPay>=5,d.dAge>=2&&d.dOvr>0);
+      const txt=`I saw the trade: ${d.got}. `+(good?by('Now that is a trade. We got better today.','I like what this does to the payroll.','Young talent and an eye on the future. Good.'):bad?by('We got worse today, and the fans can tell.',`That adds ${money(d.dPay)} to my payroll. I hope it is worth it.`,'We just got older. That was not the plan we talked about.'):'Interesting. Walk me through it.');
+      const opts=[];
+      if(d.dOvr>=0)opts.push(['It makes us better right now.',{sec:by(1,0,-1)}]);
+      if(d.dAge<0||d.picks>0)opts.push(['It sets us up for the next few years.',{sec:by(-1,0,1)}]);
+      if(d.dPay<0)opts.push([`It saves us ${money(-d.dPay)}.`,{sec:by(0,1,0)}]);
+      opts.push(['Trust me on this one.',{tr:trustOf()>=60?1:-1}]);
+      return ['About that trade',txt,opts.length>1?opts:null,good?2:bad?-2:0];
+    }
+    case 'sign':{
+      const big=d.amt>=20,v=(otr('showman')&&(big||d.star)?3:0)+(otr('pinch')&&big?-2:0)+(otr('spender')&&big?1:0);
+      return ['The signing',`${d.name}${big?` at ${money(d.amt)} a year`:''}. ${otr('showman')?'Now that is a name people pay to see.':otr('pinch')&&big?'That is a lot of my money. He had better be worth it.':by('Good. Now go win with him.','I hope he sells tickets.','Make sure he fits what we are building.')}`,null,v];
+    }
+    case 'inj':return ['Bad news',`Terrible news about ${d.name}. ${by('Can we still make the playoffs without him?','How much is this going to cost us at the gate?','Do whatever the doctors need. No shortcuts.')}`,
+      ty==='patient'?null:[['Yes. The rest of the roster can carry us.',{pledge:'playoffs',sec:1}],['It will be tough. Let us be realistic.',{sec:by(-1,0,0)}]]];
+    case 'rival':return d.won?['Rivalry win',`Beating the ${T(d.tid).nick} never gets old.${otr('competitor')?' That one I will remember.':''}`,null,otr('competitor')?2:0]
+      :['Rivalry loss',`Losing to the ${T(d.tid).nick}. ${otr('competitor')?'I do not lose to them. Ever. Fix this.':'I heard about it from everyone I know.'}`,
+        [['We will get them next time.',{sec:otr('competitor')?1:0}],['They are the better team right now.',{sec:otr('competitor')?-2:0,tr:1}]],otr('competitor')?-2:0];
+    case 'crowd':return ['Empty seats',`Three straight home games with the arena under 70% full. ${by('Winning fixes this. Win.','Empty seats are lost money. Fix it.','We need the fans with us while we build.')}`,
+      [['I will cut ticket prices 10%.',{price:.9,sec:by(0,1,1)}],['A promo night to bring them back.',{cash:.3,hype:1.5}],['Winning will fill the seats.',{sec:by(1,-2,-1),tr:-1}]]];
+    case 'deadline':{
+      const rank=confStand(t.conf).indexOf(t)+1;
+      return ['The trade deadline',`The deadline is in a few days and we are ${rank}${['th','st','nd','rd'][rank<4?rank:0]} in the ${t.conf==='E'?'East':'West'}. Are we buying or selling?`,
+        [['Buying. We are making the playoffs.',{pledge:'playoffs',sec:by(2,0,-1)}],['Selling. Picks and young players.',{sec:by(-3,1,2)}],['Standing pat.',{sec:otr('meddler')?-1:0}]]];
+    }
+    case 'tax':return ['The luxury tax',`We are ${money(payroll(u)-TAX)} over the tax line. Every dollar over it costs me more. I want us under by the trade deadline.`,
+      [['I will get us under by the deadline.',{pledge:'tax'}],['The tax is the price of winning.',{sec:-3,tr:-3}]]];
+    case 'mid':{
+      const on=o.goals.filter(g=>goalStatus(g)[0]).length,n=o.goals.length;
+      return ['Halfway there',`Halfway through the season and ${on} of my ${n} goal${n>1?'s':''} ${on===1?'is':'are'} on track. ${on===n?'Keep this up.':on>=n/2?'Good, not great.':'This is not what I expected.'}`];
+    }
+    case 'big':return ['What a night',`${d.pts} points from ${d.name}! ${otr('showman')?'Highlights like that sell jerseys.':'Tell him I said so.'}`];
+    case 'clinch':return ['Playoffs',`We are in the playoffs. ${by('Now win some rounds.','Playoff home games. My accountant is thrilled.','Ahead of schedule. Enjoy it.')}`];
+    case 'missed':return ['No playoffs',`No playoffs this year. ${by('That is not acceptable.','Fewer home dates, less money.','Not the end of the world. Show me progress.')}`];
+  }
+  return null;
+}
+// what the owner says at the end-of-season review
+function ownQuote(delta,champ,fired,books){
+  const o=S.owner,ty=o.type;
+  if(fired)return 'We are going in a different direction. Thank you for your work.';
+  if(champ)return {win:'This is why I bought this team. Enjoy it, then let us do it again.',profit:'A championship. Even I am not looking at the books tonight.',patient:'We built this the right way, and now we have a banner.'}[ty];
+  books=ty==='profit'&&books!=null?(books?' And the books look good.':' And the books need work.'):'';
+  if(delta>=12)return 'A great season. This is what I hoped for when I hired you.'+books;
+  if(delta>=0)return 'Not bad. I expect more next year.'+books;
+  if(o.security>=30)return 'That was not good enough. I am watching.'+books;
+  return 'One more season like this and we are done.'+books;
+}
+// after each of your games: streaks, rivals, the 10-game promise
+function ownGame(won,opp,rival){
+  const o=S.owner;if(!o)return;const t=T(S.userTid),n=t.streak||0;
+  for(const p of (o.pl||[]).filter(p=>p.k==='run'))if(t.w+t.l-p.g0>=10)settlePledge(p,t.w-p.w0>=5);
+  dmGame();
+  if(n===-5||n===-9)ownTry('skid',{n:-n},.85,true);
+  else if(n===6||n===10)ownTry('streak',{n},.7);
+  else if(rival&&!(o.riv||[]).includes(S.season+':'+opp+':'+won)&&rnd()<.5){o.riv=[...(o.riv||[]),S.season+':'+opp+':'+won].slice(-6);ownTry('rival',{tid:opp,won},otr('competitor')?1:.5)}
+}
+function ownCrowd(full){
+  const o=S.owner;if(!o)return;o.lowc=full<.7?(o.lowc||0)+1:0;
+  if(o.lowc===3&&o.crowdS!==S.season){o.crowdS=S.season;ownTry('crowd',{},S.owner.type==='win'?.6:1,true)}
+}
+// once a day in the regular season, after the games
+function ownSeasonDay(){
+  const o=S.owner;if(!o||S.userTid==null)return;ownDay();
+  const dd=deadlineDay(),half=Math.floor(S.sched.length/2);
+  if(S.day===6&&payroll(S.userTid)>TAX&&(o.type==='profit'||otr('pinch')))ownTry('tax',{},1,true);
+  if(S.day===dd-4)ownTry('deadline',{},o.type==='win'||otr('meddler')?1:.75,true);
+  if(S.day===half){const kind=checkinKind();if(kind==='ult'){o.ult={s:S.season,...ultGoal()};if(o.security<25)interim()}if(kind==='warn')o.warn=S.season;ownFire('checkin',{kind,u:o.ult&&o.ult.s===S.season?o.ult:null})}
+  hotDay();
+  if(S.day===dd)for(const p of (o.pl||[]).filter(p=>p.k==='tax'))settlePledge(p,payroll(S.userTid)<=TAX);
+  dmTry();
+}
+function ownBtn(){
+  const m=S.owner&&S.owner.msg;if(!m||S.userTid==null)return '';
+  const fresh=m.id>(UI.ownViewed||0);
+  return `<button class="btn offers-btn${fresh?' new':''}" data-act="ownShow" title="${fresh?'Your owner sent you a message':'Open the owner\'s message'}">Owner <span class="badge">1</span></button>`;
+}
+function renderOwnMsg(){
+  const m=S.owner&&S.owner.msg;if(!m||S.userTid==null)return '';
+  const hint=e=>{const v=e.sec==null?0:typeof e.sec==='number'?e.sec:(e.sec[S.owner.type]||0),parts=[];
+    if(e.dem)return dmHint(m.k.slice(2),e.dem);
+    if(e.plan)return e.plan===planPref(S.owner.type)?`year 3: ${lc1(goalText(e.plan==='contend'?{k:'conf'}:e.plan==='rebuild'?{k:'playoffs'}:{k:'profit',t:35}))} (±40) · trust ↑`:`${planOdds()}% they agree; otherwise their plan stands and trust -2 · year 3: ${lc1(goalText(e.plan==='contend'?{k:'conf'}:e.plan==='rebuild'?{k:'playoffs'}:{k:'profit',t:35}))}`;
+    if(e.gm)return {more:`${Math.round((.3+trustOf()/200)*100)}% chance of +1 year and +15%; otherwise the offer stands and trust -3`,extmore:`${Math.round((.3+trustOf()/200)*100)}% chance of +1 year and +15%; otherwise the offer stands and trust -3`,
+      leave:'you leave and pick from job offers',later:'play out the final year as a lame duck',sign:'',extsign:'',take:`new team, new owner, ${money(m.d.sal)} a season`,
+      lev:`${Math.round((.5+trustOf()/200)*100)}% chance of +25% and a year; otherwise job security -3, trust -6`,stay:'trust +6, job security +2'}[e.gm];
+    if(v)parts.push(`owner ${v>0?'↑':'↓'}`);if(e.tr)parts.push(`trust ${e.tr>0?'↑':'↓'}`);if(e.pledge)parts.push(`promise: ${lc1(PLEDGE_TXT[e.pledge])}`);if(e.price)parts.push('ticket prices ↓');if(e.cash)parts.push(`costs ${money(evCash({cash:e.cash}))}`);if(e.hype)parts.push('hype ↑');
+    return parts.join(' · ')};
+  return `<div class="panel press biz-ev"><div class="own-id">${ownAv(S.userTid)}<div><h3 style="margin:0">${esc(ownName())} · ${esc(m.title)}</h3><span class="muted" style="font-size:.85rem">Your owner${m.fx?` · ${esc(m.fx)}`:''}</span></div></div>
+   <p class="own-q">"${esc(m.text)}"</p>
+   <div class="answers">${m.opts.map(([l,e],i)=>`<button class="btn answer" data-act="ownAns" data-arg="${i}"><span>${esc(l)}</span><small class="muted">${hint(e)}</small></button>`).join('')}</div>
+   <p class="muted" style="font-size:.85rem">${['renew','extend','poach','plan'].includes(m.k)?'Left unanswered, the last option is taken when the owner writes again.':m.k.startsWith('d:')?'A demand. Left unanswered, it counts as a no when the owner writes again.':'Left unanswered, the last reply goes out when the owner writes again (trust -2).'}</p></div>`;
+}
+function renderOwnModal(){
+  return `<div class="modal-bg" data-act="closeOwn"><div class="modal wide" role="dialog" aria-modal="true" aria-label="Message from your owner" data-act="modal">
+    <div class="spread"><h2>Your owner</h2><button class="btn" data-act="closeOwn" aria-label="Close">Close</button></div>
+    ${S.owner&&S.owner.msg?renderOwnMsg():'<p class="muted">No message waiting right now.</p>'}</div></div>`;
+}
+// ---------- trust and demands (v54) ----------
+// trust (0-100) is how the owner feels about you; job security stays results-driven. Trust moves meeting odds,
+// softens or deepens a bad review, and sets how often the owner meddles with demands.
+const trustOf=()=>S.owner?S.owner.trust??50:50;
+const trustWord=v=>v>=80?'Full faith':v>=60?'Trusts you':v>=40?'Neutral':v>=20?'Wary':'No faith';
+const trustCls=v=>v>=60?'good':v>=40?'':v>=20?'warn':'bad';
+function trustAdd(v,why){
+  const o=S.owner;if(!o||!v)return;
+  o.trust=clamp(Math.round(trustOf()+v),0,100);
+  o.tlog=[{s:S.season,why,v},...(o.tlog||[])].slice(0,8);
+}
+const trustSoft=()=>clamp(1-(trustOf()-50)/200,.75,1.25); // what a negative review is multiplied by
+const dmFreq=()=>(otr('meddler')?1.8:otr('handsoff')?.4:1)*(1.4-trustOf()/100);
+const DM_CAP=()=>otr('meddler')?4:otr('handsoff')?1:2;
+// [job security, trust] when a demand you agreed to is kept or broken
+const DM_FX={yes:{ok:[3,8],bad:[-5,-10]},half:{ok:[2,5],bad:[-3,-6]}};
+const dmNoCost=()=>[-ownNoCost(),otr('meddler')?-6:-4];
+const DM_TITLE={fa:'A free agent',trade:'A trade target',start:'A favourite player',draft:'A prospect on TV',fire:'The head coach',price:'Ticket prices'};
+// what you agreed to, in a line
+function dmText(dm){
+  const d=dm.d,p=d.pid!=null?pById(d.pid):null,nm=p?p.name:d.name,half=dm.lvl==='half';
+  switch(dm.k){
+    case 'fa':return half?`Make a run at ${nm} in free agency`:`Sign ${nm} within a week`;
+    case 'trade':return half?`Make a real offer for ${nm} before the deadline`:`Trade for ${nm} before the deadline`;
+    case 'start':return half?`Give ${nm} 4 more minutes a game over the next 10 games`:`Start ${nm} in 7 of the next 10 games he is healthy for`;
+    case 'draft':return half?`Draft ${nm} if he is still there at your pick`:`Draft ${nm} with your first pick`;
+    case 'fire':return half?`Win 5 of the next 10 games, or let ${d.coach} go`:`Fire ${d.coach}`;
+    case 'price':return half?'Raise ticket prices 5%':'Raise ticket prices 10%';
+  }
+  return '';
+}
+// what you could be asked right now: [kind, data]
+function dmCands(){
+  const u=S.userTid,t=T(u),o=S.owner,c=[],ty=o.type;
+  if(S.phase==='freeagency'&&S.faDay<=5){
+    const fa=freeAgents().filter(p=>p.ovr>=55&&p.ask>=6&&canSign(u,p).ok).sort((a,b)=>b.ovr-a.ovr);
+    const p=otr('showman')?fa[0]:shuffle(fa.slice(0,3))[0];
+    if(p)c.push(['fa',{pid:p.pid,name:p.name,due:S.tick+6}]);
+    return c;
+  }
+  if(S.phase!=='regular')return c;
+  const left=S.sched.length-S.day,gp=t.w+t.l;
+  if(S.day>=10&&S.day<deadlineDay()-12){
+    const elite=S.players.filter(p=>p.tid>=0).map(p=>p.ovr).sort((a,b)=>b-a)[7]; // not even an owner asks for the league's very best
+    const pool=S.players.filter(p=>p.tid>=0&&p.tid!==u&&p.ovr>=60&&p.ovr<elite&&p.age<=31&&!p.inj).sort((a,b)=>b.ovr-a.ovr).slice(0,15);
+    const p=otr('showman')||ty==='win'?pool[0]&&shuffle(pool.slice(0,4))[0]:shuffle(pool)[0];
+    if(p&&ty!=='patient'||p&&p.age<=25)c.push(['trade',{pid:p.pid,name:p.name,home:rnd()<.4}]);
+  }
+  if(left>=25&&gp>=5){
+    const ro=roster(u).filter(p=>!p.gl),fifth=ro.map(p=>p.ovr).sort((a,b)=>b-a)[4]||50;
+    const fav=ro.filter(p=>!p.inj&&p.ovr>=45&&p.ovr>=fifth-8&&(roleOf(p)??3)>0);
+    const p=(o.fav!=null&&fav.find(x=>x.pid===o.fav))||shuffle(fav)[0];
+    if(p)c.push(['start',{pid:p.pid,name:p.name,mpg0:p.st.gp?p.st.min/p.st.gp:0}]);
+  }
+  const hc=t.staff.hc;
+  if(hc&&gp>=20&&left>=20&&t.w/gp<.42&&(t.voice??55)<60)c.push(['fire',{coach:hc.name}]);
+  const b=t.biz,gpr=goodPrice(t);
+  if((ty==='profit'||otr('pinch'))&&(b.price<gpr-3||b.hype>=70&&fillAt(t,b.price)>.97))c.push(['price',{}]);
+  return c;
+}
+// maybe ask for something today: one at a time, a few a season, never with a message still waiting
+function dmTry(force){
+  const o=S.owner;if(!o||S.userTid==null||o.msg||o.dm)return;
+  if(o.dc&&o.dc.s!==S.season)o.dc=null;const dc=o.dc=o.dc||{s:S.season,n:0};
+  if(dc.n>=DM_CAP()||S.tick-(o.dlast??-99)<15)return;
+  if(!force&&rnd()>=.025*dmFreq())return;
+  const c=dmCands().filter(([k])=>!(dc.k||[]).includes(k));if(!c.length)return; // one of each kind a season
+  const [k,d]=pick(c);dc.k=[...(dc.k||[]),k];
+  if(k==='start')o.fav=d.pid;
+  dc.n++;o.dlast=S.tick;ownFire('d:'+k,d);
+}
+// the draft: once the combine opens, the owner may have watched someone on TV
+function dmDraft(){
+  const o=S.owner,u=S.userTid;if(!o||u==null||o.msg||o.dm)return;
+  const slot=S.draft.order.indexOf(u)+1;if(!slot||slot>30)return;
+  if(rnd()>=.45*dmFreq())return;
+  const r=mediaRanks(6),pool=prospects().filter(p=>r[p.pid]>=slot+2&&r[p.pid]<=slot+10);
+  const p=shuffle(pool.filter(p=>!p.bg||p.bg.kind==='college'))[0]||shuffle(pool)[0];if(!p)return;
+  o.dlast=S.tick;ownFire('d:draft',{pid:p.pid,name:p.name,slot,rank:r[p.pid]});
+}
+// [title, text, options] for a demand
+function dmMsg(k,d){
+  const o=S.owner,t=T(S.userTid),id=ownId(),p=d.pid!=null?pById(d.pid):null,ln=p?lastName(p):'';
+  const by=(w,pr,q)=>({win:w,profit:pr,patient:q})[o.type];
+  switch(k){
+    case 'fa':return [DM_TITLE.fa,`${d.name} is the best player on the market, and I want him in our uniform. ${otr('showman')?'Think of the press conference.':by('He makes us better right now.','He will sell tickets.','He can grow with this group.')} Get it done this week.`,
+      [[`He'll be ours this week.`,{dem:'yes'}],[`I'll make a run at him, but not at any price.`,{dem:'half'}],[`He's not the right fit.`,{dem:'no'}]]];
+    case 'trade':{const fl=id.bg==='star'?`I played against his father.`:d.home?`He grew up twenty minutes from our arena. This city would go crazy.`:otr('showman')?`He is a star, and stars sell.`:`He is exactly what this team is missing.`;
+      return [DM_TITLE.trade,`I want ${d.name} on this team. ${fl} The ${T(p.tid).nick} will want a lot, I know. Get him before the deadline.`,
+      [[`I'll get it done.`,{dem:'yes'}],[`I'll make a real offer. No promises.`,{dem:'half'}],[`He doesn't fit what we're building.`,{dem:'no'}]]]}
+    case 'start':return [DM_TITLE.start,`${d.name} is my favourite player. My grandkids wear his jersey, and he is coming off the bench? I want him in the starting five.`,
+      [[`He starts for the next 10 games.`,{dem:'yes'}],[`More minutes, not a start.`,{dem:'half'}],[`The lineup is the coach's call.`,{dem:'no'}]]];
+    case 'draft':return [DM_TITLE.draft,`I watched ${d.name} on TV last night. ${ln} was the best player on the floor. The experts have him around No. ${d.rank}, and I don't care. I want him with our pick.`,
+      [[`He's our pick.`,{dem:'yes'}],[`If he's there at our pick, he's ours.`,{dem:'half'}],[`Our scouts make that call.`,{dem:'no'}]]];
+    case 'fire':return [DM_TITLE.fire,`${t.w}-${t.l}. The players have stopped listening to ${d.coach}, and so have I. ${by('I want a new voice on that bench.','Every loss costs me at the gate.','Even a rebuild needs a coach who can teach.')} Make the change.`,
+      [[`You're right. He's gone.`,{dem:'yes'}],[`Give him ten more games.`,{dem:'half'}],[`He stays. I believe in him.`,{dem:'no'}]]];
+    case 'price':return [DM_TITLE.price,`Our tickets are too cheap. ${t.biz.hype>=70?'The building is full every night.':'Other teams charge more for less.'} I want prices up.`,
+      [[`Raise them 10%.`,{dem:'yes'}],[`5%, and no more.`,{dem:'half'}],[`The fans come first.`,{dem:'no'}]]];
+  }
+  return null;
+}
+function dmHint(k,lvl){
+  if(lvl==='no'){const [s,tr]=dmNoCost();return `job ${s}, trust ${tr}`}
+  const f=DM_FX[lvl],now=k==='price'||k==='fire'&&lvl==='yes';
+  const what=k==='price'?`ticket prices +${lvl==='yes'?10:5}%, fans ${lvl==='yes'?'↓':'↓ a little'} · `:k==='fire'&&lvl==='yes'?'fires the coach now · ':'';
+  return now?`${what}job +${f.ok[0]}, trust +${f.ok[1]}`:`kept: job +${f.ok[0]}, trust +${f.ok[1]} · broken: job ${f.bad[0]}, trust ${f.bad[1]}`;
+}
+function dmAnswer(k,d,lvl,auto){
+  const o=S.owner,u=S.userTid,dm={k,lvl,d,t0:S.tick,s:S.season};
+  if(lvl==='no'){const [s,tr]=dmNoCost();secAdd(s);trustAdd(tr,`${auto?'Ignored':'Turned down'}: ${lc1(dmText({k,lvl:'yes',d}))}`);
+    o.dlog=[{s:S.season,k,txt:dmText({k,lvl:'yes',d}),lvl,ok:null},...(o.dlog||[])].slice(0,8);o.dlast=S.tick;return}
+  o.dm=dm;
+  if(k==='price'){const b=T(u).biz;b.price=Math.round(b.price*(lvl==='yes'?1.1:1.05));hypeBump(u,lvl==='yes'?-1.5:-.5);dmSettle(true);return}
+  if(k==='fire'){if(lvl==='yes'){if(T(u).staff.hc)fireStaff('hc');dmSettle(true);return}d.w0=T(u).w;d.g0=T(u).w+T(u).l}
+  if(k==='start'){const p=pById(d.pid);d.n=0;d.st=0;d.m0=p.st.min;d.g0=p.st.gp}
+  dmCheck();
+}
+function dmSettle(ok,why){
+  const o=S.owner,dm=o&&o.dm;if(!dm)return;
+  const [sv,tv]=DM_FX[dm.lvl][ok?'ok':'bad'],txt=dmText(dm);o.dm=null;o.dlast=S.tick;
+  secAdd(sv);trustAdd(tv,`${ok?'Kept':'Broke'} your word: ${lc1(txt)}`);
+  o.dlog=[{s:S.season,k:dm.k,txt,lvl:dm.lvl,ok},...(o.dlog||[])].slice(0,8);
+  const say=ok?{fa:'There he is. That is how you run a team.',trade:'You got him. I knew you would.',start:'He looks like he belongs out there. Thank you.',draft:'My guy. I will be at his first game.',fire:dm.lvl==='yes'?'Thank you. It had to be done.':'Fine. You were right to stick with him.',price:'Good. The fans will get used to it.'}[dm.k]
+    :{fa:'We let him walk. I asked you for one thing.',trade:'The deadline came and went, and he is still not ours.',start:'I asked you to play him. You did not.',draft:'You passed on him. I will remember that.',fire:'Ten games, and nothing changed. You should have listened.',price:''}[dm.k];
+  ownLog(ok?'A demand met':'A demand ignored',say+(why?` ${why}`:''),`job security ${sv>0?'+':''}${sv}, trust ${tv>0?'+':''}${tv}`);
+}
+// is the demand you agreed to done, or past saving? (each day, and after trades and signings)
+function dmCheck(){
+  const o=S.owner,dm=o&&o.dm;if(!dm||S.userTid==null)return;
+  const u=S.userTid,d=dm.d,p=d.pid!=null?pById(d.pid):null;
+  if(dm.k==='fa'){if(p&&p.tid===u)dmSettle(true);else if(!p||p.tid>=0)dmSettle(false,p?`He signed with the ${tname(p.tid)}.`:'');else if(S.tick>d.due)dmSettle(false)}
+  else if(dm.k==='trade'){if(p&&p.tid===u)dmSettle(true);else if(!p||S.phase!=='regular'||S.day>=deadlineDay())dmSettle(false)}
+  else if(dm.k==='start'){if(!p||p.tid!==u)dmSettle(false,'And then he was gone.')}
+  else if(dm.k==='fire'){const hc=T(u).staff.hc;if(!hc||hc.name!==d.coach)dmSettle(true)}
+}
+// after each of your games: the starting promise and the ten-game reprieve
+function dmGame(){
+  const o=S.owner,dm=o&&o.dm;if(!dm)return;dmCheck();if(!o.dm)return;
+  const u=S.userTid,t=T(u),d=dm.d;
+  if(dm.k==='start'){const p=pById(d.pid);if(p.inj)return;d.n++;if(roleOf(p)===0)d.st++;
+    if(d.n>=10){const g=p.st.gp-d.g0;dmSettle(dm.lvl==='yes'?d.st>=7:g>0&&(p.st.min-d.m0)/g>=d.mpg0+4)}}
+  if(dm.k==='fire'&&t.w+t.l-d.g0>=10)dmSettle(t.w-d.w0>=5);
+}
+
 // once between reviews you can ask the owner for one thing; the answer depends on owner type, job security, the roster and the books
+// ---------- the hot seat and your contract (v55) ----------
+// your deal: S.owner.deal = {sal ($M a season), s0 (first season), exp (last season)}; S.career tracks earnings and jobs
+const gmBase=tid=>r1(2.4+T(tid).biz.market*.4+(ownId(tid)&&ownId(tid).type==='win'?.4:0));
+const dealStart=()=>['lottery','combine','draft','resign'].includes(S.phase)||S.phase==='playoffs'&&S.po&&S.po.champ!=null?S.season+1:S.season; // the first season you will run
+function gmDeal(){
+  const o=S.owner;if(!o)return null;
+  if(!o.deal)o.deal={sal:gmBase(S.userTid),s0:S.season-1,exp:S.season+1}; // saves from before contracts: two seasons left, no new-deal cushion
+  return o.deal;
+}
+const career=()=>S.career||(S.career={earned:0,jobs:[]});
+const dealLeft=()=>{const d=gmDeal();return d?d.exp-S.season:0}; // seasons after this one
+const lameDuck=()=>{const d=gmDeal();return !!d&&S.season===d.exp&&['regular','playoffs'].includes(S.phase)&&!d.ext};
+function newDeal(sal,yrs,same){
+  const s0=dealStart();S.owner.deal={sal:r1(sal),s0,exp:s0+yrs-1};if(same)return;
+  career().jobs.unshift({tid:S.userTid,from:s0,owner:ownName(),sal:r1(sal)});career().jobs.length=Math.min(career().jobs.length,10);
+}
+function endJob(why){const j=career().jobs[0];if(j&&j.tid===S.userTid&&!j.to){j.to=S.season;j.why=why}}
+// the interim GM waiting in the wings once your job is in danger
+function interim(){const o=S.owner;if(!o.interim)o.interim={name:pick(OWN_FIRST)+' '+pick(OWN_LAST),s:S.season};return o.interim}
+// is a goal on pace mid-season? (goalStatus only says whether it is already met)
+function goalPace(gl){
+  const t=T(S.userTid),gp=t.w+t.l,rank=confStand(t.conf).indexOf(t)+1;
+  if(S.phase!=='regular'||!gp)return goalStatus(gl)[0];
+  switch(gl.k){
+    case 'wins':return t.w/gp*82>=gl.t;
+    case 'playoffs':return rank<=8;
+    case 'round2':return rank<=4;
+    case 'conf':return rank<=2;
+    case 'profit':return finTotal(t.biz.fin).profit>=gl.t*Math.min(1,S.day/S.sched.length);
+  }
+  return goalStatus(gl)[0];
+}
+// the All-Star break check-in: [kind, condition] by job security and how the goals look
+function checkinKind(){
+  const o=S.owner,on=o.goals.filter(goalPace).length,n=o.goals.length||1,sec=o.security;
+  if(sec<30&&on<n||sec<45&&on===0)return 'ult';
+  if(on===n||sec>=60&&on>=n/2)return 'vote';
+  return 'warn';
+}
+function ultGoal(){const o=S.owner,g=o.type==='profit'?o.goals.find(g=>g.k==='profit'||g.k==='noloss'):o.type==='patient'?o.goals.find(g=>g.k==='wins'):null;return g?{k:g.k,t:g.t}:{k:'playoffs'}}
+const ultText=u=>goalText(u);
+const ultMet=u=>u.k==='playoffs'&&S.phase!=='regular'?!!(S.po&&S.po.seeded.includes(S.userTid)):S.phase==='regular'?goalPace(u):goalStatus(u)[0];
+// once a day: press rumours and the interim GM below 25
+function hotDay(){
+  const o=S.owner;if(!o)return;
+  if(o.security<25&&o.rum!==S.season&&S.day>=10){o.rum=S.season;const ig=interim();
+    news(`Reports: the ${tname(S.userTid)} have quietly talked to assistant GM ${ig.name} about taking over the front office.`,1);
+    ownLog('The rumours',`You have seen the reports about ${ig.name.split(' ')[0]}. I am not going to deny them. Turn this around.`,'')}
+}
+// at the review, after job security moves: renewals, extensions and offers from other owners
+function gmSummer(champ){
+  const o=S.owner,d=gmDeal(),u=S.userTid;
+  career().earned=r1(career().earned+d.sal);
+  if(S.fired){
+    const left=Math.max(0,d.exp-S.season),buy=r1(left*d.sal);
+    S.fired.buy=buy;career().earned=r1(career().earned+buy);endJob('fired');
+    if(buy>0)news(`The ${tname(u)} owe you ${money(buy)} for the ${left} season${left>1?'s':''} left on your deal.`);
+    return;
+  }
+  if(champ&&rnd()<.7){
+    const tid=pick(S.teams.filter(t=>t.tid!==u&&t.biz.market>=T(u).biz.market-1).map(t=>t.tid));
+    if(tid!=null){ownFire('poach',{tid,sal:r1(Math.max(gmBase(tid),d.sal)*1.4)});return}
+  }
+  const left=d.exp-S.season;
+  if(left<=0){
+    if(o.security>=50)ownFire('renew',{sal:r1(d.sal*(o.security>=75?1.2:1.08)),yrs:o.security>=75?4:3});
+    else{const pool=S.teams.filter(t=>t.tid!==u).sort((a,b)=>pct(a)-pct(b)).slice(0,12).map(t=>t.tid);
+      S.fired={from:u,offers:shuffle(pool).slice(0,3),why:'expired'};endJob('expired');
+      news(`${ownName()} chose not to renew your contract. Your time with the ${tname(u)} is over.`,1)}
+  }else if(left===1&&o.security>=70&&!d.ext)ownFire('extend',{sal:r1(d.sal*1.15),yrs:3});
+}
+// asking for more: trust decides
+function gmPush(){return rnd()<.3+trustOf()/200}
+function gmAnswer(e,d,auto){
+  const o=S.owner,u=S.userTid,dl=gmDeal();
+  if(e.gm==='sign'){newDeal(d.sal,d.yrs,1);news(`You signed a ${d.yrs}-year deal with the ${tname(u)} at ${money(d.sal)} a season.`)}
+  else if(e.gm==='extsign'){dl.exp+=d.yrs;dl.sal=d.sal;dl.ext=1;news(`You signed a ${d.yrs}-year extension with the ${tname(u)}: ${money(d.sal)} a season through ${dl.exp}.`)}
+  else if(e.gm==='more'||e.gm==='extmore'){
+    if(gmPush()){const sal=r1(d.sal*1.15),yrs=d.yrs+1;
+      if(e.gm==='more')newDeal(sal,yrs,1);else{dl.exp+=yrs;dl.sal=sal;dl.ext=1}
+      news(`${ownName()} gave you more: ${yrs} years at ${money(sal)} a season.`);ownLog('Deal done','Fine. You earned it. Now earn it again.',`${yrs} years, ${money(sal)} a season`)}
+    else{trustAdd(-3,'Pushed for a bigger contract');
+      if(e.gm==='more')newDeal(d.sal,d.yrs,1);else{dl.exp+=d.yrs;dl.sal=d.sal;dl.ext=1}
+      news(`${ownName()} would not budge. You signed the original offer: ${d.yrs} years at ${money(d.sal)} a season.`);ownLog('No more','That was my offer, and it was a good one. Sign it.',`${d.yrs} years, ${money(d.sal)} a season, trust -3`)}
+  }
+  else if(e.gm==='leave'){const pool=S.teams.filter(t=>t.tid!==u).map(t=>t.tid);
+    S.fired={from:u,offers:shuffle(pool).slice(0,4),why:'left'};endJob('left');news(`You turned down a new deal and left the ${tname(u)}.`,1)}
+  else if(e.gm==='later'){news('You put off extension talks. This season is the last one on your deal.')}
+  else if(e.gm==='take'){const sal=d.sal;endJob('left');news(`You left the champion ${tname(u)} for the ${tname(d.tid)}.`,1);takeJob(d.tid);S.owner.deal.sal=sal;career().jobs[0].sal=sal;S.owner.security=Math.max(S.owner.security,62)}
+  else if(e.gm==='lev'){
+    if(rnd()<.5+trustOf()/200){dl.sal=r1(dl.sal*1.25);dl.exp+=1;dl.ext=1;trustAdd(-3,`Used the ${T(d.tid).nick}' interest for a raise`);news(`${ownName()} matched: ${money(dl.sal)} a season through ${dl.exp}.`);ownLog('Matched',`You know how to negotiate. ${money(dl.sal)} a season, through ${dl.exp}. Now stop taking their calls.`,'trust -3')}
+    else{trustAdd(-6,'Used another team\'s offer as leverage');secAdd(-3);news(`${ownName()} called your bluff, and the ${tname(d.tid)} moved on.`);ownLog('Called your bluff','If you want to leave, leave. Otherwise, get back to work.','job security -3, trust -6')}
+  }
+  else if(e.gm==='stay'){trustAdd(6,`Turned down the ${T(d.tid).nick}`);secAdd(2);news(`You turned down the ${tname(d.tid)} to stay with the ${tname(u)}.`)}
+}
+// ---------- the 3-year plan, interviews and ownership changes (v56) ----------
+const PLANS={contend:['Contend','Win now: win targets 2 higher, and in year 3, reach the conference finals.'],
+  rebuild:['Rebuild','Two patient years (win targets 6 lower, grow a young core), then make the playoffs in year 3.'],
+  profit:['Profit','Make money: profit goals $10M higher, and in year 3, a $35M profit.']};
+const planPref=type=>({win:'contend',profit:'profit',patient:'rebuild'})[type];
+const planYear=()=>{const p=S.owner&&S.owner.plan;return p&&S.season>=p.s0&&S.season<=p.s0+2?S.season-p.s0+1:0};
+const planOdds=()=>clamp(Math.round((.35+trustOf()/200)*100),5,95);
+function planGoals(g){
+  const o=S.owner,p=o.plan,yr=planYear();if(!yr)return;
+  const find=k=>g.find(x=>x.k===k),put=x=>{const e=find(x.k);if(e)Object.assign(e,x);else g.push(x)};
+  if(p.k==='contend'){const w=find('wins');if(w)w.t+=2;if(yr===3)put({k:'conf',w:40,plan:1})}
+  if(p.k==='rebuild'){const w=find('wins');if(yr<3){if(w)w.t=Math.max(10,w.t-6);const r2=find('round2');if(r2)r2.k='playoffs';put({k:'young',t:2,w:15})}else put({k:'playoffs',w:40,plan:1})}
+  if(p.k==='profit'){if(yr===3)put({k:'profit',t:35,w:40,plan:1});else{const pr=find('profit');if(pr)pr.t+=10;else put({k:'profit',t:15,w:15})}}
+}
+// a new plan when you start a job or the last one ends; the owner's choice stands until you answer
+function proposePlan(){
+  const o=S.owner;if(!o)return false;
+  if(o.plan&&!o.plan.pending&&dealStart()<=o.plan.s0+2)return false;
+  o.plan={k:planPref(o.type),s0:dealStart(),pending:1};
+  ownFire('plan',{});return true;
+}
+function planSet(k,why){
+  const o=S.owner;o.plan={k,s0:o.plan?o.plan.s0:dealStart()};
+  if(why)news(why);
+  if(S.phase==='regular'&&S.day<=10)setGoals();
+}
+const limitFor=tid=>{const o=ownId(tid);return ({win:221.7,profit:TAX,patient:TAX+10})[o.type]+(o.tr.includes('pinch')?-5:0)+(o.tr.includes('spender')?6:0)};
+// interview questions: [key, question, answers], each answer {type or trait: [security, trust]}
+const IVQ=[
+  ['plan','What is your plan for this team?',[['Win now. We go all in.',{win:[5,2],profit:[-3,-1],patient:[-4,-2]}],['Build through the draft, the right way.',{win:[-4,-1],profit:[1,0],patient:[5,3]}],['Stay competitive and keep the books healthy.',{win:[-1,0],profit:[5,2],patient:[1,1]}]]],
+  ['tax','How do you feel about the luxury tax?',[['If it buys a title, it is worth every dollar.',{spender:[4,2],pinch:[-5,-3]}],['I would rather never pay it.',{pinch:[4,3],spender:[-2,-1]}],['Case by case.',{pinch:[1,0],spender:[1,0]}]],t=>t.includes('pinch')||t.includes('spender')],
+  ['role','How involved do you want me to be?',[['Call me anytime. Your door should always be open.',{meddler:[3,4],handsoff:[-1,-1]}],['Give me room to work, and judge the results.',{handsoff:[4,3],meddler:[-4,-3]}],['A weekly update, and big decisions together.',{meddler:[2,2],handsoff:[1,1]}]],t=>t.includes('meddler')||t.includes('handsoff')],
+  ['star','Can you bring a star to this city?',[['Name him. I will get him.',{showman:[5,0]}],['Stars come once you are winning.',{showman:[0,2]}]],t=>t.includes('showman')],
+  ['time','How long until this team is good?',[['One season.',{impatient:[5,0],loyal:[-1,-2]}],['Give me three years and I will build something that lasts.',{loyal:[4,4],impatient:[-5,-2]}]],t=>t.includes('impatient')||t.includes('loyal')],
+  ['rival','Who is our biggest rival?',[['Whoever beat us last. I take every loss personally.',{competitor:[4,2]}],['We worry about ourselves.',{competitor:[-1,1]}]],t=>t.includes('competitor')],
+  ['last','Why did your last job end?',[['I made mistakes, and I learned from them.',{all:[0,4]}],['The owner never gave me a fair chance.',{all:[-2,-3],loyal:[0,0]}],['Bad luck and injuries.',{all:[0,-1]}]],t=>true,()=>(S.career&&S.career.jobs||[]).some(j=>j.to)]];
+function ivQuestions(tid){
+  const o=ownId(tid),qs=[IVQ[0]],rest=IVQ.slice(1).filter(q=>(!q[3]||q[3](o.tr))&&(!q[4]||q[4]()));
+  return [...qs,...shuffle(rest).slice(0,2)].map(q=>q[0]);
+}
+function ivScore(tid,qk,i){
+  const o=ownId(tid),e=IVQ.find(q=>q[0]===qk)[2][i][1];let s=0,tr=0;
+  for(const k in e)if(k==='all'||k===o.type||o.tr.includes(k)){s+=e[k][0];tr+=e[k][1]}
+  return [s,tr];
+}
+const IV_RE=[['leaned forward and smiled.','said "That is exactly what I wanted to hear."','laughed and shook your hand again.'],['nodded and wrote something down.','said "Fair enough."','tilted their head, then nodded.'],['did not react.','looked at their notes.','said "Hm. Go on."'],['frowned.','said "That is not how we do things here."','put the pen down and sat back.']];
+function ivReact(tid,s,tr){const n=ownName(tid).split(' ')[0],v=s+tr,b=v>=4?0:v>=1?1:v>-2?2:3;return `${n} ${pick(IV_RE[b])}`}
+function ivAnswer(i){
+  const V=UI.iv;if(!V)return;const [s,tr]=ivScore(V.tid,V.qs[V.i],i);
+  V.sec+=s;V.tr+=tr;V.log.push([IVQ.find(q=>q[0]===V.qs[V.i])[2][i][0],ivReact(V.tid,s,tr)]);V.i++;
+}
+function takeJobIv(tid,V){
+  takeJob(tid);
+  if(V){const o=S.owner;o.security=clamp(o.security+V.sec,20,80);o.trust=clamp(trustOf()+V.tr,10,90);
+    news(`Your interview with ${ownName()} went ${V.sec+V.tr>=6?'very well':V.sec+V.tr>=0?'fine':'badly'}: job security ${o.security}, trust ${o.trust}.`)}
+}
+// resigning: in the offseason, you can walk away and pick from open jobs
+const canResign=()=>['lottery','combine','draft','resign','freeagency'].includes(S.phase)&&!S.fired;
+function resign(){
+  if(!canResign())return;const u=S.userTid;
+  S.fired={from:u,offers:shuffle(S.teams.filter(t=>t.tid!==u).map(t=>t.tid)).slice(0,4),why:'resign'};
+  endJob('resigned');news(`You resigned as general manager of the ${tname(u)}.`,1);
+}
+// ---------- ownership changes ----------
+const OWN_WHY={heir:'handed the team to an heir',sale:'sold the team'};
+function ownerSummer(){
+  let n=0;const u=S.userTid;
+  for(const t of shuffle(S.teams.slice())){
+    const o=t.own;if(!o)continue;o.age++;
+    const b=t.biz,h=b.finHist||[],lp=h[0]?h[0].profit:0,bad=t.hist.slice(0,2).filter(x=>x.w<30).length;
+    // a relocation threat from last summer gets settled
+    if(t.reloc&&t.reloc.s<S.season){
+      const ok=rnd()<.45+(b.hype-40)/100;
+      if(ok){if(b.arena<5&&!b.arenaNext){b.arenaNext=b.arena+1}news(`${t.city} agreed to help pay for a new arena, and the ${t.nick} are staying.${t.tid===u?' Your arena gets an upgrade next season.':''}`,t.tid===u?1:0)}
+      else{hypeBump(t.tid,-6);loyalBump(t,-3);news(`Talks over a new arena in ${t.city} broke down. The ${t.nick} stay for now, but fans are rattled.`,t.tid===u?1:0)}
+      if(t.tid===u&&S.owner)ownLog('The arena',ok?'The city came through. We are staying, and we are building.':'No deal with the city. We stay, for now. I will not forget how this went.','');
+      t.reloc=null;continue;
+    }
+    if(n>=3)continue;
+    let why=null;
+    if(o.age>=80&&rnd()<.3||o.age>=72&&rnd()<.08)why='heir';
+    else if(bad>=2&&lp<0&&rnd()<.15||rnd()<.015)why='sale';
+    if(why){changeOwner(t,why);n++;continue}
+    if(b.market<=2&&b.arena<=2&&lp<0&&rnd()<.12){t.reloc={s:S.season};n++;
+      news(`The ${tname(t.tid)} owner ${o.name} says the team could move unless ${t.city} helps pay for a new arena.`,t.tid===u?1:0);
+      if(t.tid===u&&S.owner)ownLog('The arena',`I told the city we need a new building. Win games and fill the seats this year, and they will have a hard time saying no.`,'')}
+  }
+}
+function changeOwner(t,why){
+  const o=t.own,u=S.userTid,n=genOwnerId();n.since=S.season;
+  if(why==='heir'){n.name=pick(OWN_FIRST)+' '+o.name.split(' ').slice(1).join(' ');n.age=32+Math.floor(rnd()*18);n.bg=o.bg==='family'?'family':o.bg;
+    if(!n.tr.some(k=>o.tr.includes(k))&&!OWN_CLASH.some(c=>c.includes(o.tr[0])&&c.includes(n.tr[1])))n.tr[0]=o.tr[0]}
+  else n.bg=pick(['pe','tech','media','energy','real']);
+  t.ownHist=[{name:o.name,from:o.since,to:S.season-1,why},...(t.ownHist||[])].slice(0,6);
+  t.own=n;
+  news(why==='heir'?`${o.name} handed the ${tname(t.tid)} to ${n.name}, ${n.age}.`:`${o.name} sold the ${tname(t.tid)} to a group led by ${n.name} (${OWN_BG[n.bg][0].toLowerCase()}).`,t.tid===u?1:0);
+  if(t.tid===u&&S.owner){
+    const so=S.owner,oldSec=so.security,oldTr=trustOf();
+    if(so.msg)ownAnswer(so.msg.opts.length-1,true);
+    Object.assign(so,{type:n.type,security:why==='heir'?Math.round((oldSec+50)/2):45,trust:why==='heir'&&oldTr>=60?55:50,tlog:[],dm:null,pl:[],plan:null,met:null,bonus:{},ult:null,warn:null,interim:null,nrev:0});
+    so.tlog=[{s:S.season,why:`New owner: ${n.name}`,v:0}];
+    ownFire('newowner',{why,old:o.name});
+  }
+}
+
 const ASKS=[['payroll','Raise the payroll limit by $10M','Until the next review. Owners say yes to good rosters and healthy books.'],
   ['staff','Add $4M to the staff budget','For the next two seasons.'],
   ['arena','Pay half of an arena upgrade','The owner covers half; you finance the rest over five seasons.'],
@@ -1633,6 +2265,11 @@ function askOdds(k){
   if(k==='staff')s+=pr*.4;
   if(k==='arena')s+=pr*.4+(t.biz.hype-50)*.2;
   if(k==='patience')s-=(W-35)*.8; // a good roster doesn't get a rebuild pass
+  const tm={payroll:{pinch:-12,spender:10},staff:{pinch:-10},arena:{pinch:-8,showman:8},patience:{impatient:-15,loyal:10}}[k];
+  for(const x in tm)if(otr(x))s+=tm[x];
+  if(k==='arena'&&ownId().bg==='real')s+=10;
+  s+=(trustOf()-50)*.3;
+  if(lameDuck())s-=8;
   return clamp(Math.round(s),3,95);
 }
 const oddsWord=v=>v>=60?'<span class="pill good">Likely</span>':v>=35?'<span class="pill warn">Toss-up</span>':'<span class="pill bad">Unlikely</span>';
@@ -1657,7 +2294,7 @@ function askOwner(k){
     if(cond){gl=expectedWins(S.userTid)>=48?{k:'round2',w:15,cond:1}:{k:'playoffs',w:15,cond:1};
       if(S.phase==='regular'){const ex=o.goals.find(g=>g.k===gl.k);if(ex){ex.w+=15;gl=ex}else o.goals.push(gl)}else o.extra=gl}
     res=gl?`Yes, on one condition: ${lc1(goalText(gl))} (worth ${gl.w} job security either way).`:'Yes.';
-  }else{o.security=clamp(o.security-3,0,100);res='No. The owner did not like being asked (job security -3).'}
+  }else{const c=ownNoCost();o.security=clamp(o.security-c,0,100);res=`No. ${ownName()} did not like being asked (job security -${c}).`}
   o.met={k,res};
   news(`Owner meeting: you asked to ${label}. ${res}`);
 }
@@ -2094,6 +2731,7 @@ function startPlayoffs(){
   S.phase='playoffs';
   const u=S.po.seeded.indexOf(S.userTid);
   news(u>=0?`${tname(S.userTid)} clinched the ${u%8+1} seed in the ${T(S.userTid).conf==='E'?'East':'West'}.`:`${tname(S.userTid)} missed the playoffs.`);
+  if(S.owner)ownFire(u>=0?'clinch':'missed');
 }
 const sDone=s=>s.wa===4||s.wb===4;
 const sWin=s=>s.wa===4?s.a:s.b;
@@ -2233,6 +2871,7 @@ function startCombine(){
   S.phase='combine';S.combine={work:[],int:[],med:[]};
   const r=mediaRanks(6);
   prospects().filter(p=>r[p.pid]<=COMBINE_INVITES).forEach(p=>{traitsOf(p);p.meas=measure(p);p.ck=12}); // everyone sees the combine
+  dmDraft();
   news(`The pre-draft combine is open: ${WORKOUTS} workouts, ${INTERVIEWS} interviews and ${medSlots()} medicals are yours to schedule on the Draft tab.`);
 }
 function combineAct(kind,pid){
@@ -2365,7 +3004,8 @@ function queuePress(q){if(S.presser)S.pressNext=q;else firePress(q)}
 function firePress([kind,...a]){if(kind==='lottery')pressLottery(...a)}
 const prospects=()=>S.players.filter(p=>p.tid===-2);
 function draftPlayer(p,tid){
-  const i=S.draft.idx;
+  const i=S.draft.idx,dm=S.owner&&S.owner.dm;
+  if(dm&&dm.k==='draft'&&tid===S.userTid){const tg=pById(dm.d.pid);if(tg&&tg.tid===-2&&tg!==p)dm.d.seen=1}
   p.tid=tid;p.draft={year:S.season,pick:i+1};p.rookieSeason=S.season+1;p.mood=65;
   p.contract=i<30?{amt:r1(10.5-i*.3),exp:S.season+3}:{amt:MINSAL,exp:S.season+2};
   S.draft.picks.push({pick:i+1,tid,orig:S.draft.orig?S.draft.orig[i]:tid,pid:p.pid,name:p.name,pos:p.pos,cons:S.draft.cons?S.draft.cons[p.pid]:null});
@@ -2421,6 +3061,8 @@ function aiDraftUntilUser(){
   if(S.draft.idx>=S.draft.order.length)finishDraft();
 }
 function finishDraft(){
+  {const dm=S.owner&&S.owner.dm;if(dm&&dm.k==='draft'){const tg=pById(dm.d.pid),mine=tg&&tg.tid===S.userTid;
+    dmSettle(mine||dm.lvl==='half'&&!dm.d.seen,!mine&&tg&&tg.tid>=0?`The ${tname(tg.tid)} took him.`:'')}}
   S.picks=S.picks.filter(k=>k.season!==S.season);
   prospects().forEach(p=>{p.tid=-1;p.ask=MINSAL;p.askYrs=2;p.rookieSeason=S.season+1});
   S.phase='resign';
@@ -2489,6 +3131,7 @@ function toFreeAgency(){
     delete p.resign;delete p.refuse;
   });
   S.season++;
+  ownerSummer();
   staffSummer();
   renewDeals();
   S.teams.forEach(t=>t.dead=t.dead.filter(d=>d.exp>=S.season));
@@ -2515,6 +3158,7 @@ function sign(tid,p,amt,yrs){
 function faDay(){noting(faDay0)}
 function faDay0(){
   S.faDay++;S.tick++;
+  ownDay();if(S.faDay<=5)dmTry(S.faDay===2&&rnd()<.35*dmFreq());
   if(S.tick%3===0)makeOffers();
   if(S.tick%4===0)aiTrades();
   aiExtensions(.1);
@@ -2616,7 +3260,9 @@ function startSeason(){
     }
   }
   for(const k in S.dealOffers||{}){news(`No pick made, so you renewed the ${DEALS.find(x=>x[0]===k)[1].toLowerCase()} deal on the safe terms.`);takeDeal(k,0)}
-  setGoals();
+  if(S.owner&&S.owner.plan&&!S.owner.plan.pending&&S.season>S.owner.plan.s0+2)S.owner.plan=null;
+  if(S.owner&&!S.owner.plan)S.owner.plan={k:planPref(S.owner.type),s0:S.season,pending:1}; // the owner's plan counts until you answer
+  setGoals();if(S.owner){if(S.owner.plan.pending&&!(S.owner.msg&&S.owner.msg.k==='plan'))ownFire('plan',{});else if(!S.owner.plan.pending)ownFire('season')}
   S.players.forEach(p=>{p.st=newStats();delete p.delta});
   S.phase='regular';S.lastBox=null;S.po=null;S.draft=null;
   fcSummer();genDraftClass();makeSchedule();addPicks(S.season+3);syncFc();
@@ -2777,6 +3423,8 @@ function proposeTrade(){
 }
 const tradeNames=(ps,ks)=>[...ps.map(pid=>pById(pid).name),...ks.map(id=>pickLabel(pickById(id))+' pick')].join(', ')||'nothing';
 function doTrade(tid,mine,theirs,mk,tk){
+  const u0={pay:payroll(S.userTid),ovr:teamOvr(S.userTid)},ps=[...mine,...theirs].map(pById),avgAge=a=>a.length?a.reduce((s,p)=>s+p.age,0)/a.length:0;
+  const bigDeal=ps.some(p=>p.ovr>=58)||[...mk,...tk].some(id=>pickById(id).rd===1),dAge=theirs.length&&mine.length?avgAge(theirs.map(pById))-avgAge(mine.map(pById)):0;
   jerseyTradeHit(mine);
   news(`Trade with ${tname(tid)}: you sent ${tradeNames(mine,mk)} for ${tradeNames(theirs,tk)}.`);
   const gotNames=tradeNames(theirs,tk);
@@ -2784,6 +3432,8 @@ function doTrade(tid,mine,theirs,mk,tk){
   mk.forEach(id=>pickById(id).owner=tid);tk.forEach(id=>pickById(id).owner=S.userTid);
   S.offers=S.offers.filter(o=>o.tm.every(id=>pById(id)&&pById(id).tid===S.userTid)&&o.tt.every(id=>pById(id)&&pById(id).tid===o.tid));
   S.pressMem.trades++;
+  dmCheck();
+  if(bigDeal)ownQ('trade',{got:gotNames,dPay:r1(payroll(S.userTid)-u0.pay),dOvr:teamOvr(S.userTid)-u0.ovr,dAge:r1(dAge),picks:tk.filter(id=>pickById(id).rd===1).length-mk.filter(id=>pickById(id).rd===1).length});
   pressTrade(gotNames,theirs.map(pById),tk.length,mine.map(pById),tid);
   syncDraftOrder();
   if(S.phase==='draft')aiDraftUntilUser(); // if you traded away the pick on the clock, the new owner picks now
@@ -3964,7 +4614,7 @@ function toastAct(msg,label,act){const t=document.getElementById('toast');t.clas
 
 function renderPicker(){
   const rk=ovrRanks();
-  const card=t=>`<button class="pick" data-act="pickTeam" data-arg="${t.tid}">${chip(t.tid)}<span><b>${t.city} ${t.nick}</b><small>Team rating ${teamOvr(t.tid)} (#${rk[t.tid]}) · payroll ${money(payroll(t.tid))}</small></span></button>`;
+  const card=t=>`<button class="pick" data-act="pickTeam" data-arg="${t.tid}">${chip(t.tid)}<span><b>${t.city} ${t.nick}</b><small>Team rating ${teamOvr(t.tid)} (#${rk[t.tid]}) · payroll ${money(payroll(t.tid))}</small><small>${ownLine(t.tid)}</small></span></button>`;
   return `<div class="wrap"><div class="hero"><span class="muted" style="text-transform:uppercase;letter-spacing:.12em;font-size:.8rem">${S.season-1}-${String(S.season).slice(2)} season · 30 teams · real rosters</span><h1>Pick the franchise you'll run</h1><p class="muted">Build a roster under a ${money(CAP)} salary cap and a ${money(TAX)} luxury tax line. Make trades, run the draft, and survive free agency. Low-rated teams are rebuilds; high-rated ones are built to win now.</p><p class="muted" style="font-size:.85rem">Unofficial fan-made sim, not affiliated with the NBA or its teams. Rosters and contracts reflect the 2026-27 season as of October 2026 (source: Basketball-Reference); two-way players are left out. Ratings are opinions. Draft prospects from the first draft on are fictional.</p></div>
   <div class="grid2"><div class="panel"><h3>Eastern Conference</h3><div class="picker">${S.teams.filter(t=>t.conf==='E').map(card).join('')}</div></div>
   <div class="panel"><h3>Western Conference</h3><div class="picker">${S.teams.filter(t=>t.conf==='W').map(card).join('')}</div></div></div></div>`;
@@ -3989,7 +4639,7 @@ function renderHeader(){
   return `<header class="top"><div class="wrap">
    <div class="brand">${chip(t.tid)}<div><div class="tn">${t.city} ${t.nick}</div><div class="sub">${S.season} · ${phase}</div></div></div>
    <div class="score num"><div><b>${t.w}-${t.l}</b><span>Record</span></div><div><b>${teamOvr(t.tid)}</b><span>Rating</span></div><div><b>${roster(t.tid).length}</b><span>Roster</span></div>${S.owner?`<div><b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':''}">${S.owner.security}</b><span>Job</span></div>`:''}</div>
-   <div class="actions">${alertsBtn()}${bizBtn()}${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}${settingsBtn()}</div>
+   <div class="actions">${alertsBtn()}${ownBtn()}${bizBtn()}${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}${settingsBtn()}</div>
    <div class="capbar"><span class="num">Payroll <b class="${pr>TAX?'bad':pr>CAP?'warn':''}">${money(pr)}</b></span>
      <div class="meter" aria-hidden="true"><i class="${cls}" style="width:${w}%"></i><u style="left:${CAP/(TAX*1.25)*100}%"></u><u style="left:${TAX/(TAX*1.25)*100}%"></u></div>
      <span class="num">Cap ${money(CAP)} · Tax ${money(TAX)}</span></div>
@@ -4051,7 +4701,7 @@ function noteNews(txt){
   else noteAdd(txt,tag);
 }
 // the decisions waiting on you before a sim day, to spot the new ones after it
-function noteState(){return {o:S.userTid==null?[]:liveOffers().map(o=>o.id),p:S.presser&&S.presser.id,b:S.bizEv&&S.bizEv.id,l:S.lr&&S.lr.id}}
+function noteState(){return {o:S.userTid==null?[]:liveOffers().map(o=>o.id),p:S.presser&&S.presser.id,b:S.bizEv&&S.bizEv.id,l:S.lr&&S.lr.id,w:S.owner&&S.owner.msg&&S.owner.msg.id}}
 function noteDiff(w){
   if(S.userTid==null)return;
   for(const o of liveOffers().filter(o=>!w.o.includes(o.id))){
@@ -4061,6 +4711,7 @@ function noteDiff(w){
   if(S.presser&&S.presser.id!==w.p)noteAdd(`Press conference: ${S.presser.title}. Reporters are waiting.`,'Press','pressShow',null,S.presser.id);
   if(S.bizEv&&S.bizEv.id!==w.b)noteAdd(`Business decision: ${S.bizEv.title}. ${S.bizEv.text}`,'Business','bizShow',null,S.bizEv.id);
   if(S.lr&&S.lr.id!==w.l)noteAdd(`Locker room: ${S.lr.title}.`,'Locker room','lrShow',null,S.lr.id);
+  const om=S.owner&&S.owner.msg;if(om&&om.id!==w.w)noteAdd(`${ownName()}: "${om.text}"`,'Owner','ownShow',null,om.id);
 }
 // can the note's button still do something? decisions expire once answered or replaced
 function noteLive(n){
@@ -4069,13 +4720,14 @@ function noteLive(n){
     case 'pressShow':return !!S.presser&&S.presser.id===n.ref;
     case 'bizShow':return !!S.bizEv&&S.bizEv.id===n.ref;
     case 'lrShow':return !!S.lr&&S.lr.id===n.ref;
+    case 'ownShow':return !!(S.owner&&S.owner.msg)&&S.owner.msg.id===n.ref;
     case 'player':return !!pById(n.arg);
     default:return !!n.act;
   }
 }
-const NOTE_BTN={offersShow:'View offer',pressShow:'Answer',bizShow:'Decide',lrShow:'View',player:'Player',tab:'Open'};
+const NOTE_BTN={offersShow:'View offer',pressShow:'Answer',bizShow:'Decide',lrShow:'View',ownShow:'Reply',player:'Player',tab:'Open'};
 const noteBtn=(n,cls='')=>noteLive(n)?`<button class="btn${cls}" data-act="${n.act}"${n.arg!=null?` data-arg="${esc(String(n.arg))}"`:''}>${NOTE_BTN[n.act]}</button>`:'';
-const noteNeeds=n=>['offersShow','pressShow','bizShow','lrShow'].includes(n.act); // waiting on a decision from you
+const noteNeeds=n=>['offersShow','pressShow','bizShow','lrShow','ownShow'].includes(n.act); // waiting on a decision from you
 // after a sim: up to three things that happened, open decisions first, newest first, and a way into the full list
 function noteToast(b){
   if(UI.alerts)return;
@@ -4162,14 +4814,14 @@ function renderHome(){
   const sad=roster(u).filter(p=>moodOf(p)<45).sort((a,b)=>moodOf(a)-moodOf(b));
   const moodTxt=sad.length?`<p><b class="warn">Unhappy:</b> ${sad.map(p=>`${plink(p.pid,p.name)}${p.tradeReq?' <span class="pill bad">wants out</span>':''}`).join(', ')} <span class="muted">· open a player to see why</span></p>`:'';
   const injTxt=inj.length?`<p><b class="bad">Injured:</b> ${inj.map(p=>`${esc(p.name)} <span class="muted">(${injLc(p.inj.type)}, out ${p.inj.g} game${p.inj.g>1?'s':''})</span>`).join(', ')}</p>`:'';
-  const own=S.owner?`<p>${OWNER_TYPES[S.owner.type]} · job security <b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':'good'}">${S.owner.security}</b> · goals: ${S.owner.goals.map(gl=>`${goalText(gl)} ${goalStatus(gl)[0]?'<span class="good">✓</span>':'<span class="muted">…</span>'}`).join(', ')} <button class="btn small" data-act="tab" data-arg="business">Business</button></p>`:'';
+  const own=S.owner?`<p>${esc(ownName())} (${OWNER_TYPES[S.owner.type].toLowerCase()}) is <b class="${ownMood()[1]}">${ownMood()[0].toLowerCase()}</b> · job security <b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':'good'}">${S.owner.security}</b> · trust <b class="${trustCls(trustOf())}">${trustOf()}</b>${S.owner.dm?` · you agreed: ${esc(lc1(dmText(S.owner.dm)))}`:''}${S.owner.ult&&S.owner.ult.s===S.season?` · <span class="pill bad">Ultimatum: ${esc(lc1(ultText(S.owner.ult)))}</span>`:S.owner.security<25&&S.phase==='regular'?' · <span class="pill bad">Hot seat</span>':''}${lameDuck()?' · <span class="pill warn">Lame duck</span>':''} · goals: ${S.owner.goals.map(gl=>`${goalText(gl)} ${goalPace(gl)?'<span class="good">✓</span>':'<span class="muted">…</span>'}`).join(', ')} <button class="btn small" data-act="tab" data-arg="business">Business</button></p>`:'';
   let cupTxt='';
   if(S.phase==='regular'&&cupOn()){const c=S.cup,gr=cupGroupOf(u),st=c.st[u],pos=cupTable(gr).findIndex(x=>x.tid===u)+1,inKo=c.ko&&c.ko[0].some(G=>G.a===u||G.b===u);
     if(c.champ==null&&(st.w+st.l||c.ko))cupTxt=`<p><b>In-Season Cup:</b> ${c.ko?(inKo?(c.ko.some(r=>r.some(G=>G.w!=null&&(G.a===u||G.b===u)&&G.w!==u))?'knocked out in the knockout round':'alive in the knockout round'):`out after going ${st.w}-${st.l} in group play`):`${st.w}-${st.l} in Group ${gr.name}, ${pos}${['th','st','nd','rd'][pos<4?pos:0]} place`} <button class="btn small" data-act="tab" data-arg="standings">Cup standings</button></p>`}
   const ch=chemOf(u),chTxt=`<p><b>Chemistry:</b> <span class="${chemCls(ch)}">${ch} · ${chemLabel(ch)}</span>${ch<50?' <span class="muted">· see Roster for why</span>':''}</p>`;
   const vac=ROLES.filter(([r])=>!T(u).staff[r]).map(([,l])=>l.toLowerCase());
   const vacTxt=vac.length?`<p><b class="bad">No ${vac.join(', ')}.</b> <button class="btn small" data-act="tab" data-arg="staff">Hire on the Staff tab</button></p>`:'';
-  return `<div class="home"><div class="home-top">${renderStory()}${renderBizEv()}${renderPress()}${renderOffers()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${cupTxt}${next}</div></div>
+  return `<div class="home"><div class="home-top">${renderOwnMsg()}${renderStory()}${renderBizEv()}${renderPress()}${renderOffers()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${cupTxt}${next}</div></div>
   <aside class="panel home-side"><div class="spread"><h3>News</h3><div class="row">${[['','All'],['mine','Your team']].map(([k,l])=>`<button class="btn small${(UI.newsF||'')===k?' primary':''}" data-act="newsF" data-arg="${k}">${l}</button>`).join('')}</div></div><ul class="news">${S.news.filter(n=>UI.newsF!=='mine'||n.m).slice(0,60).map(n=>`<li><span>${n.s}</span><span>${esc(n.txt)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul></aside>
   <div class="home-rest"><div class="panel"><div class="spread"><h3>Last game</h3>${S.lastBox&&S.lastBox.id&&gameLog(S.lastBox.id)?`<button class="btn small" data-act="game" data-arg="${S.lastBox.id}">Game page: flow and play-by-play</button>`:''}</div>${S.lastBox&&S.lastBox.recap?`<p>${esc(S.lastBox.recap)}</p>`:''}${renderBox()}</div>
   ${renderRace()}<div class="grid2">
@@ -4767,18 +5419,43 @@ function renderCap(){
 function renderBusiness(){
   const u=S.userTid,t=T(u),b=t.biz,o=S.owner,f=b.fin,tot=finTotal(f);
   const sec=o.security,secCls=sec>=60?'good':sec>=30?'warn':'bad';
-  const goals=o.goals.map(gl=>{const [ok,st]=goalStatus(gl);return `<tr><td class="l">${goalText(gl)}</td><td class="l muted">${st}</td><td>${ok?'<span class="pill good">On track</span>':'<span class="pill warn">Not yet</span>'}</td><td class="muted">±${gl.w}</td></tr>`}).join('');
+  const goals=o.goals.map(gl=>{const [,st]=goalStatus(gl),ok=goalPace(gl);return `<tr><td class="l">${goalText(gl)}</td><td class="l muted">${st}</td><td>${ok?'<span class="pill good">On track</span>':'<span class="pill warn">Not yet</span>'}</td><td class="muted">±${gl.w}</td></tr>`}).join('');
   const last=o.hist.find(h=>h.tid===u);
   const bon=o.bonus||{},perks=[bon.pay?`payroll limit +${money(bon.pay)} until the next review`:'',bon.staff?`staff budget +${money(bon.staff)} (${bon.staffLeft} review${bon.staffLeft>1?'s':''} left)`:''].filter(Boolean);
   const meeting=(o.met?`<p>This year you asked to ${esc(lc1(ASKS.find(a=>a[0]===o.met.k)[1]))}. <b>${esc(o.met.res)}</b> <span class="muted">You can ask again after the next review.</span></p>`
-    :`<p class="muted">One request between reviews. A no costs 3 job security.</p><div class="scroll"><table><tbody>${ASKS.map(([k,l,d])=>{const why=askAvail(k),v=askOdds(k);return `<tr><td class="l" style="white-space:normal"><b>${l}</b><br><span class="muted" style="font-size:.85rem">${d}</span></td><td>${why?'':oddsWord(v)}</td><td>${why?`<span class="muted" style="font-size:.85rem">${why}</span>`:`<button class="btn small" data-act="askOwner" data-arg="${k}">Ask</button>`}</td></tr>`}).join('')}</tbody></table></div>`)
+    :`<p class="muted">One request between reviews. A no costs ${ownNoCost()} job security. Trust moves the odds.</p><div class="scroll"><table><tbody>${ASKS.map(([k,l,d])=>{const why=askAvail(k),v=askOdds(k);return `<tr><td class="l" style="white-space:normal"><b>${l}</b><br><span class="muted" style="font-size:.85rem">${d}</span></td><td>${why?'':oddsWord(v)}</td><td>${why?`<span class="muted" style="font-size:.85rem">${why}</span>`:`<button class="btn small" data-act="askOwner" data-arg="${k}">Ask</button>`}</td></tr>`}).join('')}</tbody></table></div>`)
     +(perks.length?`<p class="muted" style="font-size:.85rem">Approved: ${perks.join('; ')}.</p>`:'');
-  const owner=`<div class="panel callout"><div class="spread"><h2>${OWNER_TYPES[o.type]}</h2><span>Job security <b class="${secCls} num" style="font-size:1.3rem">${sec}</b><span class="muted">/100</span></span></div>
-   <div class="meter" style="max-width:none"><i class="${sec<30?'tax':sec<60?'over':''}" style="width:${sec}%"></i></div>
-   <p class="muted">${{win:'Wants a winner now and will spend into the tax for it.',profit:'Watches the bottom line. Stay out of the tax and make money.',patient:'Will wait for a rebuild as long as the fans stay interested and the losses stay small.'}[o.type]} Payroll limit: <b>${money(ownerLimit())}</b>. At 0 job security you're fired.</p>
+  const gd=gmDeal(),cr=career(),lft=gd.exp-S.season,ult=o.ult&&o.ult.s===S.season?o.ult:null;
+  const pn=o.plan,py=planYear(),pg3=pn&&o.goals.find(g=>g.plan);
+  const planBox=pn?`<h3>The three-year plan</h3><p><b>${PLANS[pn.k][0]}</b>, ${pn.s0}-${pn.s0+2}${py?` <span class="muted">(year ${py} of 3)</span>`:pn.s0>S.season?' <span class="muted">(starts next season)</span>':''}${pn.pending?' <span class="pill warn">Not agreed yet</span>':''}<br><span class="muted" style="font-size:.85rem">${esc(PLANS[pn.k][1])}${pg3?` This season is year 3: ${esc(lc1(goalText(pg3)))} is worth ±${pg3.w}.`:''} A new plan comes when this one ends.</span></p>`:'';
+  const gmBox=`<h3>Your contract</h3><p>${money(gd.sal)} a season through ${gd.exp} <span class="muted">(${lft>0?`${lft} more season${lft>1?'s':''} after this one`:lft===0?'this is the final season':'expired'})</span>${lameDuck()?' <span class="pill warn" title="Final year of your deal: meeting odds -8">Lame duck</span>':''}${gd.s0===S.season&&!gd.ext?' <span class="pill good" title="A new deal: bad reviews are 15% softer this season">New deal</span>':''}</p>
+   ${ult?`<p class="bad"><b>Ultimatum:</b> ${esc(ultText(ult))} this season, or you are fired. <span class="muted">${ultMet(ult)?'On track right now.':'Not on track right now.'}</span></p>`:o.warn===S.season?'<p class="warn"><b>Warned</b> at the All-Star break.</p>':''}
+   ${o.interim&&o.interim.s===S.season&&o.security<35?`<p class="muted">Waiting in the wings: assistant GM ${esc(o.interim.name)}.</p>`:''}
+   ${planBox}
+   <p class="muted" style="font-size:.85rem">A good review with a year left brings extension talks; a deal that runs out is renewed only at 50+ job security. Fired, you are paid for the seasons left. Career earnings ${money(cr.earned)} · ${cr.jobs.length} job${cr.jobs.length===1?'':'s'}${cr.jobs.length>1?`: ${cr.jobs.slice(0,4).map(j=>`${T(j.tid).abbr} ${j.from}${j.to?`-${j.to}`:'-'}`).join(', ')}`:''}.</p>
+   ${T(u).reloc?`<p class="warn">${esc(ownName())} has threatened to move the team unless ${esc(T(u).city)} helps pay for a new arena. It is settled next summer: high fan hype makes a deal more likely.</p>`:''}
+   ${(T(u).ownHist||[]).length?`<p class="muted" style="font-size:.85rem">Before ${esc(ownName())}: ${T(u).ownHist.slice(0,3).map(h=>`${esc(h.name)} (${h.from}-${h.to}, ${OWN_WHY[h.why]})`).join('; ')}.</p>`:''}
+   ${canResign()?`<div class="row"><button class="btn small" data-act="resign">Resign and look for another job</button><span class="muted" style="font-size:.85rem">No buyout. Offseason only.</span></div>`:''}`;
+  const oi=ownId(),[md,mdc]=ownMood(),pl=o.pl||[],olg=o.log||[],tru=trustOf(),tl=o.tlog||[],dl=o.dlog||[],sf=trustSoft();
+  const dmNow=o.dm?`<p><b>You agreed:</b> ${esc(dmText(o.dm))}${o.dm.k==='start'?` <span class="muted">(${o.dm.lvl==='yes'?`started ${o.dm.d.st} of ${o.dm.d.n}`:`${o.dm.d.n} of 10 games`})</span>`:o.dm.k==='fire'?` <span class="muted">(${T(u).w-o.dm.d.w0}-${T(u).w+T(u).l-o.dm.d.g0-(T(u).w-o.dm.d.w0)} so far)</span>`:o.dm.k==='fa'?` <span class="muted">(${Math.max(0,o.dm.d.due-S.tick)} days left)</span>`:''} <span class="muted">· ${dmHint(o.dm.k,o.dm.lvl)}</span></p>`:'';
+  const trustBox=`<h3>Trust</h3><p class="muted" style="font-size:.85rem">How ${esc(oi.name.split(' ')[0])} feels about you, apart from results. Kept promises and demands, honest answers and a payroll inside the limit build it; broken promises, refused demands and unanswered messages cost it. Right now it moves meeting odds ${tru>=50?'+':''}${Math.round((tru-50)*.3)}, makes a bad review ${sf<1?`${Math.round((1-sf)*100)}% softer`:sf>1?`${Math.round((sf-1)*100)}% harsher`:'count in full'}, and sets how often the owner makes demands (${dmFreq()<.7?'rarely':dmFreq()<1.2?'now and then':'often'}).</p>
+   ${tl.length?`<ul class="needs own-log">${tl.slice(0,4).map(x=>`<li><span class="${x.v>0?'good':'bad'}">${x.v>0?'+':''}${x.v}</span> ${esc(x.why)} <span class="muted">(${x.s})</span></li>`).join('')}</ul>`:''}
+   <h3>Demands</h3>${dmNow||'<p class="muted" style="font-size:.85rem">Nothing asked of you right now. Owners ask for players, lineup changes, a new coach or higher prices, and meddling owners ask more.</p>'}
+   ${dl.length?`<ul class="needs own-log">${dl.slice(0,4).map(x=>`<li>${x.ok===true?'<span class="pill good">Kept</span>':x.ok===false?'<span class="pill bad">Broken</span>':'<span class="pill muted">Refused</span>'} ${esc(x.txt)} <span class="muted">(${x.s}${x.lvl==='half'?', met halfway':''})</span></li>`).join('')}</ul>`:''}`;
+  const owner=`<div class="panel callout"><div class="spread"><div class="own-id">${ownAv(u)}<div><h2>${esc(oi.name)}</h2><span class="muted" style="font-size:.9rem">${OWNER_TYPES[o.type]} · ${OWN_BG[oi.bg][0]} · age ${oi.age} · owner since ${oi.since}</span></div></div><span class="own-meters"><span>Job security <b class="${secCls} num" style="font-size:1.3rem">${sec}</b><span class="muted">/100</span></span><span>Trust <b class="${trustCls(tru)} num" style="font-size:1.3rem">${tru}</b><span class="muted">/100</span></span></span></div>
+   <div class="own-bars"><div><small class="muted">Job security: results</small><div class="meter" style="max-width:none"><i class="${sec<30?'tax':sec<60?'over':''}" style="width:${sec}%"></i></div></div>
+   <div><small class="muted">Trust: ${trustWord(tru).toLowerCase()}</small><div class="meter" style="max-width:none"><i style="width:${tru}%;background:var(--s3)"></i></div></div></div>
+   <p class="muted">${{win:'Wants a winner now and will spend into the tax for it.',profit:'Watches the bottom line. Stay out of the tax and make money.',patient:'Will wait for a rebuild as long as the fans stay interested and the losses stay small.'}[o.type]} ${OWN_BG[oi.bg][1]} Payroll limit: <b>${money(ownerLimit())}</b>. At 0 job security you're fired.</p>
+   <p>Mood: <b class="${mdc}">${md}</b> <span class="muted">· ${o.nrev?`${o.nrev} review${o.nrev>1?'s':''} together`:'your first season together'}</span></p>
+   <ul class="needs">${oi.tr.map(k=>`<li><span><b>${OWN_TR[k][0]}</b> <span class="muted">${OWN_TR[k][1]}</span></span></li>`).join('')}</ul>
+   ${gmBox}
+   ${renderOwnMsg()}
    <h3>${o.season} goals</h3><div class="scroll"><table><thead><tr><th class="l">Goal</th><th class="l">Now</th><th></th><th>Security</th></tr></thead><tbody>${goals}</tbody></table></div>
-   <p class="muted" style="font-size:.85rem">Reviewed after the Finals: a met goal adds 60% of its value, a missed one costs all of it${o.type==='patient'?' (60% with this owner)':''}. A title adds 30.</p>
-   ${last?`<p class="muted" style="font-size:.85rem">Last review (${last.s}): ${last.lines.map(esc).join('; ')}.</p>`:''}
+   <p class="muted" style="font-size:.85rem">Reviewed after the Finals: a met goal adds 60% of its value, a missed one costs all of it${o.type==='patient'?' (60% with this owner)':''}${otr('impatient')?', plus 25%':''}${otr('handsoff')?'. Every swing is 15% smaller':''}. A title adds ${otr('competitor')?40:30}.</p>
+   ${pl.length?`<h3>Promises to ${esc(oi.name.split(' ')[0])}</h3><ul class="needs">${pl.map(p=>`<li><span>${PLEDGE_TXT[p.k]}${p.k==='run'?` <span class="muted">(${T(u).w-p.w0}-${T(u).w+T(u).l-p.g0-(T(u).w-p.w0)} so far)</span>`:''} <span class="muted">· kept +${PLEDGE_FX[p.k][0]}, broken ${PLEDGE_FX[p.k][1]}</span></span></li>`).join('')}</ul>`:''}
+   ${last?`<p class="muted" style="font-size:.85rem">Last review (${last.s}): ${last.lines.map(esc).join('; ')}.${last.q?` "${esc(last.q)}"`:''}</p>`:''}
+   ${olg.length?`<h3>Messages</h3><ul class="needs own-log">${olg.slice(0,5).map(x=>`<li><b>${esc(x.title)}</b> <span class="muted">(${x.s!==S.season?x.s+', ':''}${esc(x.d)})</span> <span class="own-q">"${esc(x.text)}"</span>${x.reply?` <span class="muted">You: ${x.auto?'no reply':`"${esc(x.reply)}"`}</span>`:''}${x.fx?` <span class="muted">· ${esc(x.fx)}</span>`:''}</li>`).join('')}</ul>`:''}
+   ${trustBox}
    <h3>Owner meeting</h3>${meeting}</div>`;
   const att=attendance(t,b.price),cap=arenaCap(b.arena),perGame=gateAt(t,b.price).rev,fp=fairPrice(t),gp=goodPrice(t);
   const tryP=[...new Set([Math.round(fp*.8),gp,fp,Math.round(fp*1.2),Math.round(fp*1.5)])].sort((x,y)=>x-y).map(p=>{const d=fillAt(t,p);return `<tr${p===b.price?' class="you"':''}><td class="l">$${p}${p===gp?' <span class="pill good">Suggested</span>':''}${p===fp?' <span class="muted">(fair)</span>':''}</td><td class="${d<EMPTY?'bad':''}">${attendance(t,p).toLocaleString()} (${Math.round(d*100)}%)</td><td>${money(gateAt(t,p).rev)}</td></tr>`}).join('');
@@ -4901,10 +5578,26 @@ function offersInner(){
    <p class="muted" style="font-size:.85rem">Offers expire after about a week. Counter opens the deal in the trade screen so you can change it.</p>`;
 }
 function renderFired(){
-  const f=S.fired;
+  const f=S.fired,V=UI.iv&&f.offers.includes(UI.iv.tid)?UI.iv:null;
+  if(V){const o=ownId(V.tid),done=V.i>=V.qs.length,q=!done&&IVQ.find(x=>x[0]===V.qs[V.i]);
+    return `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-label="Job interview" data-act="modal">
+     <div class="spread"><div class="own-id">${ownAv(V.tid)}<div><h2>Interview: ${esc(o.name)}</h2><span class="muted" style="font-size:.9rem">${chip(V.tid)} ${tname(V.tid)} · ${OWNER_TYPES[o.type]} · ${esc(ownTraitTxt(o).toLowerCase())}</span></div></div><button class="btn" data-act="ivBack">Back to offers</button></div>
+     ${V.log.length?`<ul class="needs" style="font-size:.9rem">${V.log.map(([a,re])=>`<li><span>You: "${esc(a)}" <span class="muted">${esc(re)}</span></span></li>`).join('')}</ul>`:''}
+     ${done?`<p>The interview is over. You would start with job security <b>${clamp(55+(o.tr.includes('loyal')?7:0)+V.sec,20,80)}</b> and trust <b>${clamp((o.tr.includes('loyal')?55:50)+V.tr,10,90)}</b>.</p>
+       <div class="row"><button class="btn primary" data-act="ivTake">Take the job</button><button class="btn" data-act="ivBack">See the other offers</button></div>`
+      :`<p class="muted">Question ${V.i+1} of ${V.qs.length}</p><p class="iv-q own-q">"${esc(q[1])}"</p><div class="answers">${q[2].map(([l],i)=>`<button class="btn answer" data-act="ivAns" data-arg="${i}"><span>${esc(l)}</span></button>`).join('')}</div>
+       <p class="muted" style="font-size:.85rem">Answers that match what this owner wants raise your starting job security and trust; the wrong ones cost them.</p>`}</div></div>`}
   return `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-label="You've been fired" data-act="modal">
-   <h2>You've been fired</h2><p>The ${esc(tname(f.from))} let you go after the ${S.season} season. These teams want to talk:</p>
-   <div class="picker">${f.offers.map(tid=>`<button class="pick" data-act="takeJob" data-arg="${tid}">${chip(tid)}<span><b>${tname(tid)}</b><small>${T(tid).w}-${T(tid).l} · rating ${teamOvr(tid)} · payroll ${money(payroll(tid))}</small></span></button>`).join('')}</div>
+   <h2>${f.why==='expired'?'Your contract ran out':f.why==='left'||f.why==='resign'?'Choose your next job':"You've been fired"}</h2><p>${f.why==='resign'?`You resigned from the ${esc(tname(f.from))}.`:f.why==='expired'?`The ${esc(tname(f.from))} chose not to renew your contract after the ${S.season} season.`:f.why==='left'?`You turned down the ${esc(tname(f.from))}'s offer.`:`The ${esc(tname(f.from))} let you go after the ${S.season} season.`}${f.buy?` They owe you ${money(f.buy)} for the rest of your deal.`:''} These teams want to talk:</p>
+   <div class="job-offers">${f.offers.map(tid=>{const o=ownId(tid),top=roster(tid).sort((a,b)=>b.ovr-a.ovr).slice(0,3),t=T(tid);
+     return `<div class="job-card"><div class="spread"><b>${chip(tid)} ${tname(tid)}</b><span class="muted num">${t.hist[0]?`${t.hist[0].w}-${t.hist[0].l}`:`${t.w}-${t.l}`}</span></div>
+      <div class="own-id">${ownAv(tid)}<div><b>${esc(o.name)}</b><small class="muted">${OWNER_TYPES[o.type]} · ${OWN_BG[o.bg][0]} · ${o.age}</small></div></div>
+      <small>${o.tr.map(k=>`<b>${OWN_TR[k][0]}</b>`).join(', ')} · payroll limit ${money(limitFor(tid))}</small>
+      <small>Wants to ${PLANS[planPref(o.type)][0].toLowerCase()}: ${esc(PLANS[planPref(o.type)][1])}</small>
+      <small>Rating ${teamOvr(tid)} · payroll ${money(payroll(tid))} · ${['','small','small-mid','mid-size','large','major'][t.biz.market]} market${t.reloc?' · <span class="warn">arena fight</span>':''}</small>
+      <small class="muted">Best players: ${top.map(p=>`${esc(p.name)} (${p.ovr})`).join(', ')}</small>
+      <small><b>Offer:</b> 3 years at ${money(gmBase(tid))} a season</small>
+      <div class="row"><button class="btn small primary" data-act="ivStart" data-arg="${tid}">Interview</button><button class="btn small" data-act="takeJob" data-arg="${tid}">Take it without one</button></div></div>`}).join('')}</div>
    <div class="row"><button class="btn" data-act="newCareer">Start a new career instead</button></div></div></div>`;
 }
 function staffEffect(role,r){
@@ -5024,7 +5717,7 @@ function wrapStart(champ){
   S.wrap={s:S.season,champ,ru,score:F?`${Math.max(F.wa,F.wb)}-${Math.min(F.wa,F.wb)}`:'',path,
     fmvp:fm?[fm.pid,fm.name,lineText(S.po.fst[fm.pid])]:null,
     rep:{tid:u,w:ut.w,l:ut.l,res:roundReached(u),exp:S.preW&&S.preW.s===S.season?S.preW.w[u]:null,seed:S.po.seeded.includes(u)?seedOf(u):null,
-      own:oh?[oh.delta,oh.security,oh.lines]:null,fired:!!S.fired,rev:tot.rev,cost:tot.exp,profit:tot.profit,
+      own:oh?[oh.delta,oh.security,oh.lines,oh.q||'',oh.who||'',trustOf()]:null,fired:!!S.fired,rev:tot.rev,cost:tot.exp,profit:tot.profit,
       best:best?[best.p.pid,best.p.name,`${r1(best.a.ppg)} points, ${r1(best.a.rpg)} rebounds and ${r1(best.a.apg)} assists a game`]:null},
     bye:[],
     lg:{top:[top.tid,top.w,top.l],mvp:mvp?[mvp.pid,mvp.name,mvp.tid]:null,lead:[lead('ppg','Points'),lead('rpg','Rebounds'),lead('apg','Assists')].filter(Boolean),recs,cup:cup?[cup.tid,cup.ru,cup.score,cup.mvp]:null}};
@@ -5059,7 +5752,7 @@ function renderWrap(){
     const grade=R.fired?'F':R.res==='Champion'?'A+':d==null?'':d>=10?'A':d>=4?'B+':d>=-3?'B':d>=-9?'C':'D';
     body=`<div class="wrap-grade"><span class="grade">${grade}</span><div><p class="aw-win">${chip(R.tid)} ${R.w}-${R.l}</p><p>${esc(R.res==='Lost in Finals'?'Lost in the Finals':R.res==='Champion'?'Won the championship':R.res==='Missed playoffs'?'Missed the playoffs':'Out in the '+R.res.toLowerCase())}${R.seed?` · ${R.seed} seed`:''}</p>
       ${d!=null?`<p class="muted">Expected about ${Math.round(R.exp*(R.w+R.l)/82)} wins in October: <b class="${d>=0?'good':'bad'}">${d>0?'+':''}${d}</b>.</p>`:''}</div></div>
-      <div class="grid2"><div><h3>Owner review</h3>${R.own?`<p>Job security <b class="${R.own[0]>=0?'good':'bad'}">${R.own[0]>=0?'+':''}${R.own[0]}</b> to <b>${R.own[1]}</b>.</p><ul class="wrap-list">${R.own[2].map(l=>`<li>${esc(l)}</li>`).join('')}</ul>`:'<p class="muted">No review this season.</p>'}
+      <div class="grid2"><div><h3>Owner review</h3>${R.own?`<p>Job security <b class="${R.own[0]>=0?'good':'bad'}">${R.own[0]>=0?'+':''}${R.own[0]}</b> to <b>${R.own[1]}</b>.${R.own[5]!=null?` Trust ${R.own[5]}.`:''}</p><ul class="wrap-list">${R.own[2].map(l=>`<li>${esc(l)}</li>`).join('')}</ul>${R.own[3]?`<p class="own-q">"${esc(R.own[3])}" <span class="muted">${esc(R.own[4])}</span></p>`:''}`:'<p class="muted">No review this season.</p>'}
         ${R.fired?`<p class="bad"><b>The ${esc(tname(R.tid))} let you go.</b></p>`:''}</div>
       <div><h3>The books</h3><dl class="kv"><dt>Revenue</dt><dd>${money(R.rev)}</dd><dt>Expenses</dt><dd>${money(R.cost)}</dd><dt>Profit</dt><dd class="${R.profit>=0?'good':'bad'}">${money(R.profit)}</dd></dl>
         ${R.best?`<h3>Best player</h3><p>${pn(R.best[0],R.best[1])}<br><small class="muted">${esc(R.best[2])}</small></p>`:''}</div></div>`;
@@ -5446,7 +6139,7 @@ function renderTradeBuild(){
   return `<div class="panel callout"><div class="spread"><h2>Trade</h2><label class="row">Trade with <select id="tradeTeam">${S.teams.filter(t=>t.tid!==S.userTid).map(t=>`<option value="${t.tid}" ${t.tid===tid?'selected':''}>${t.city} ${t.nick} (${t.w}-${t.l})</option>`).join('')}</select></label></div>
    ${open?'':`<p class="bad">Trades are closed right now. They're allowed in the regular season before the deadline (day ${deadlineDay()}), at the combine, on draft night and during free agency.</p>`}
    ${['combine','draft'].includes(S.phase)?`<p class="muted">Draft night: this year's picks are valued by their actual slot${(S.cls||{})[S.season]?` and the ${S.cls[S.season].q} class`:''}. A pick you acquire goes straight into the draft order.</p>`:''}
-   <p>${chip(tid)} <b>${tname(tid)}</b> · <span class="pill">${mode}</span> <span class="muted">${modeTxt}</span></p>
+   <p>${chip(tid)} <b>${tname(tid)}</b> · <span class="pill">${mode}</span> <span class="muted">${modeTxt}</span><br><span class="muted" style="font-size:.85rem">${ownLine(tid)}</span></p>
    <dl class="kv"><dt>You send</dt><dd>${money(e.out)}</dd><dt>You receive</dt><dd>${money(e.inn)}</dd><dt>Your payroll after</dt><dd class="${e.youAfter>TAX?'bad':e.youAfter>CAP?'warn':''}">${money(e.youAfter)}</dd><dt>${T(tid).abbr} payroll after</dt><dd>${money(e.themAfter)}</dd></dl>
    <p>${verdict}</p>
    <div class="row"><button class="btn primary" data-act="propose" ${open&&!e.empty?'':'disabled'}>Propose trade</button><button class="btn" data-act="tradeClear">Clear</button></div>
@@ -5600,11 +6293,12 @@ function render(){showTip(null);
   if(S.awNight!=null&&!UI.cer)UI.cer={s:S.awNight,i:0,open:{}};
   if(S.wrapNight!=null&&!UI.wrap)UI.wrap={s:S.wrapNight,i:0};
   if(S.phase==='lottery'&&S.lotto&&!S.lotto.done&&S.wrapNight==null&&UI.lotSeen!==S.lotto.s){UI.lotSeen=S.lotto.s;UI.lot={auto:false,spd:UI.lotSpd||1}} // lottery night opens on its own once a season
-  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
+  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.ownShow?renderOwnModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
   if(UI.offers||UI.tab==='home')UI.offerViewed=Math.max(UI.offerViewed||0,...liveOffers().map(o=>o.id));
   if(S.presser&&(UI.pressShow||UI.tab==='home'))UI.pressViewed=Math.max(UI.pressViewed||0,S.presser.id||0);
   if(UI.tab==='home'||UI.tab==='roster')UI.lrViewed=Math.max(UI.lrViewed||0,S.lr?S.lr.id:0);
   if(S.bizEv&&(UI.bizShow||UI.tab==='home'))UI.bizViewed=Math.max(UI.bizViewed||0,S.bizEv.id||0);
+  if(S.owner&&S.owner.msg&&(UI.ownShow||UI.tab==='home'||UI.tab==='business'))UI.ownViewed=Math.max(UI.ownViewed||0,S.owner.msg.id);
   if(NOTE.batch.length&&!(S.fired||UI.live||UI.ask||UI.cer||UI.wrap||UI.lot)){const b=NOTE.batch;NOTE.batch=[];noteToast(b);noteSync()} // held until a full-screen moment closes
   else if(!NOTE.batch.length){storyAlert();UI.offerToasted=false;offerAlert();if(!UI.offerToasted)pressAlert()}
   const hdr=app.querySelector('.top');if(hdr)document.documentElement.style.setProperty('--hdr',hdr.offsetHeight+'px');
@@ -5622,8 +6316,18 @@ document.addEventListener('click',e=>{
     case 'closeAlerts':UI.alerts=false;break;
     case 'bizShow':UI.bizShow=true;UI.alerts=false;UI.offers=false;UI.pressShow=false;UI.player=null;UI.game=null;break;
     case 'closeBiz':UI.bizShow=false;break;
-    case 'pickTeam':S.userTid=num;newOwner(num);pressMedia();news(`You took over the ${tname(num)}. Your owner: ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);UI.tab='home';break;
-    case 'takeJob':takeJob(num);pressMedia();break;
+    case 'ownShow':UI.ownShow=true;UI.alerts=false;UI.offers=false;UI.pressShow=false;UI.bizShow=false;UI.player=null;UI.game=null;break;
+    case 'closeOwn':UI.ownShow=false;break;
+    case 'ownAns':ownAnswer(num);UI.ownShow=false;break;
+    case 'pickTeam':S.userTid=num;newOwner(num);pressMedia();news(`You took over the ${tname(num)}. Your owner: ${ownName()}, ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);UI.tab='home';break;
+    case 'takeJob':UI.iv=null;takeJob(num);pressMedia();break;
+    case 'ivStart':UI.iv={tid:num,qs:ivQuestions(num),i:0,sec:0,tr:0,log:[]};break;
+    case 'ivAns':ivAnswer(num);break;
+    case 'ivBack':UI.iv=null;break;
+    case 'ivTake':{const V=UI.iv;UI.iv=null;if(V){takeJobIv(V.tid,V);pressMedia()}break}
+    case 'resign':
+      if(UI.confirm!=='resign'||Date.now()-UI.confirmT>4000){UI.confirm='resign';UI.confirmT=Date.now();el.textContent='Click again to resign';return}
+      UI.confirm=null;resign();break;
     case 'presser':answerPress(num);if(!S.presser)UI.pressShow=false;break;
     case 'lrAns':answerStory(num);break;
     case 'lrShow':UI.alerts=false;UI.tab='roster';UI.player=null;UI.offers=false;UI.pressShow=false;document.getElementById('toast').hidden=true;window.scrollTo(0,0);break;
@@ -5701,7 +6405,7 @@ document.addEventListener('click',e=>{
     case 'toFA':toFreeAgency();UI.tab='fa';break;
     case 'faday':faDay();break;
     case 'startSeason':startSeason();break;
-    case 'sign':{const p=pById(num),c=canSign(S.userTid,p);if(!c.ok){toast(c.why);break}sign(S.userTid,p,p.ask,p.askYrs);news(`You signed ${p.name}: ${p.askYrs} yr${p.askYrs>1?'s':''}, ${money(p.contract.amt)} per year.`);if(p.contract.amt>=18||pStar()===p)pressSigning(p,'sign');toast(`Signed ${p.name}.`);break}
+    case 'sign':{const p=pById(num),c=canSign(S.userTid,p);if(!c.ok){toast(c.why);break}sign(S.userTid,p,p.ask,p.askYrs);news(`You signed ${p.name}: ${p.askYrs} yr${p.askYrs>1?'s':''}, ${money(p.contract.amt)} per year.`);if(p.contract.amt>=18||pStar()===p)pressSigning(p,'sign');if(p.contract.amt>=15||pStar()===p)ownQ('sign',{name:p.name,amt:p.contract.amt,star:pStar()===p});dmCheck();toast(`Signed ${p.name}.`);break}
     case 'release':{const p=pById(num);if(roster(S.userTid).length<=(S.phase==='regular'?13:0)){toast('You need at least 13 players during the season. Sign someone first.');break}release(p);break}
     case 'sort':if(UI.sort===arg)UI.sortDir*=-1;else{UI.sort=arg;UI.sortDir=arg==='name'?1:-1}break;
     case 'tm':case 'tt':case 'pm':case 'pt':{const s=UI[act];s.has(num)?s.delete(num):s.add(num);break}
@@ -5794,7 +6498,7 @@ function showTip(el){
 }
 document.addEventListener('mouseover',e=>showTip(e.target.closest&&e.target.closest('[data-tip]')));
 document.addEventListener('scroll',()=>showTip(null),true);
-document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.alerts)UI.alerts=false;else if(UI.settings)UI.settings=false;else return;render()});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.ownShow)UI.ownShow=false;else if(UI.alerts)UI.alerts=false;else if(UI.settings)UI.settings=false;else return;render()});
 document.addEventListener('change',e=>{
   const el=e.target;
   if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();render();return}
@@ -5830,7 +6534,10 @@ if(!S.chem)settleAll(); // saves from before chemistry: current rosters count as
 S.staffPool.concat(...S.teams.map(t=>ROLES.map(([r])=>t.staff[r]).filter(Boolean))).forEach(s=>{if(!s.trait)s.trait=pickTrait(s.role)}); // saves from before staff traits
 S.teams.forEach(t=>{if(t.voice==null)t.voice=startVoice(t.staff.hc);if(t.sfam==null)t.sfam=1});
 recoverNames();keepNames(S.awards.flatMap(a=>[...AWARDS.map(([k])=>a[k]),a.fmvp,...(a.allNba||[]).flat(),...(a.allDef||[]).flat(),...(a.allRook||[]).flat()])); // saves from before names were kept
+seedOwners(); // saves from before named owners: your owner keeps the type you already had
+if(S.userTid!=null&&S.owner){const o=S.owner,id=T(S.userTid).own;if(o.nrev==null){id.type=o.type;o.nrev=o.hist.filter(h=>h.tid===S.userTid).length;o.log=o.log||[];o.pl=o.pl||[]}}
 if(S.userTid!=null&&!S.owner)newOwner(S.userTid);
+if(S.owner&&!S.owner.deal){gmDeal();if(!career().jobs.length)career().jobs.push({tid:S.userTid,from:S.owner.deal.s0,owner:ownName(),sal:S.owner.deal.sal})}
 if(!S.picks){ // saves from before pick trading: give every team its own picks
   S.picks=[];S.nextPickId=1;
   const first=(S.phase==='draft'||S.phase==='resign')?S.season+1:S.season;
