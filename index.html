@@ -5435,7 +5435,7 @@ function renderBusiness(){
    <p class="muted" style="font-size:.85rem">A good review with a year left brings extension talks; a deal that runs out is renewed only at 50+ job security. Fired, you are paid for the seasons left. Career earnings ${money(cr.earned)} · ${cr.jobs.length} job${cr.jobs.length===1?'':'s'}${cr.jobs.length>1?`: ${cr.jobs.slice(0,4).map(j=>`${T(j.tid).abbr} ${j.from}${j.to?`-${j.to}`:'-'}`).join(', ')}`:''}.</p>
    ${T(u).reloc?`<p class="warn">${esc(ownName())} has threatened to move the team unless ${esc(T(u).city)} helps pay for a new arena. It is settled next summer: high fan hype makes a deal more likely.</p>`:''}
    ${(T(u).ownHist||[]).length?`<p class="muted" style="font-size:.85rem">Before ${esc(ownName())}: ${T(u).ownHist.slice(0,3).map(h=>`${esc(h.name)} (${h.from}-${h.to}, ${OWN_WHY[h.why]})`).join('; ')}.</p>`:''}
-   ${canResign()?`<div class="row"><button class="btn small" data-act="resign">Resign and look for another job</button><span class="muted" style="font-size:.85rem">No buyout. Offseason only.</span></div>`:''}`;
+   ${canResign()?`<div class="row"><button class="btn small" data-act="quitJob">Resign and look for another job</button><span class="muted" style="font-size:.85rem">No buyout. Offseason only.</span></div>`:''}`;
   const oi=ownId(),[md,mdc]=ownMood(),pl=o.pl||[],olg=o.log||[],tru=trustOf(),tl=o.tlog||[],dl=o.dlog||[],sf=trustSoft();
   const dmNow=o.dm?`<p><b>You agreed:</b> ${esc(dmText(o.dm))}${o.dm.k==='start'?` <span class="muted">(${o.dm.lvl==='yes'?`started ${o.dm.d.st} of ${o.dm.d.n}`:`${o.dm.d.n} of 10 games`})</span>`:o.dm.k==='fire'?` <span class="muted">(${T(u).w-o.dm.d.w0}-${T(u).w+T(u).l-o.dm.d.g0-(T(u).w-o.dm.d.w0)} so far)</span>`:o.dm.k==='fa'?` <span class="muted">(${Math.max(0,o.dm.d.due-S.tick)} days left)</span>`:''} <span class="muted">· ${dmHint(o.dm.k,o.dm.lvl)}</span></p>`:'';
   const trustBox=`<h3>Trust</h3><p class="muted" style="font-size:.85rem">How ${esc(oi.name.split(' ')[0])} feels about you, apart from results. Kept promises and demands, honest answers and a payroll inside the limit build it; broken promises, refused demands and unanswered messages cost it. Right now it moves meeting odds ${tru>=50?'+':''}${Math.round((tru-50)*.3)}, makes a bad review ${sf<1?`${Math.round((1-sf)*100)}% softer`:sf>1?`${Math.round((sf-1)*100)}% harsher`:'count in full'}, and sets how often the owner makes demands (${dmFreq()<.7?'rarely':dmFreq()<1.2?'now and then':'often'}).</p>
@@ -6325,8 +6325,8 @@ document.addEventListener('click',e=>{
     case 'ivAns':ivAnswer(num);break;
     case 'ivBack':UI.iv=null;break;
     case 'ivTake':{const V=UI.iv;UI.iv=null;if(V){takeJobIv(V.tid,V);pressMedia()}break}
-    case 'resign':
-      if(UI.confirm!=='resign'||Date.now()-UI.confirmT>4000){UI.confirm='resign';UI.confirmT=Date.now();el.textContent='Click again to resign';return}
+    case 'quitJob':
+      if(UI.confirm!=='quitJob'||Date.now()-UI.confirmT>4000){UI.confirm='quitJob';UI.confirmT=Date.now();el.textContent='Click again to quit your job';return}
       UI.confirm=null;resign();break;
     case 'presser':answerPress(num);if(!S.presser)UI.pressShow=false;break;
     case 'lrAns':answerStory(num);break;
