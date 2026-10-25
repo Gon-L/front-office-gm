@@ -843,26 +843,47 @@ const PRESETS={8:[38,36,35,34,32,26,21,18],9:[37,35,34,33,31,24,19,15,12],10:MIN
 const rotOf=tid=>T(tid).rot||{};
 const isBig=p=>p.pos==='C';
 const isGuard=p=>/G/.test(p.pos);
+// strategy presets for your team; each shapes depth, minutes, caps and back-to-back rest in rotationFor
+const ROT_MODES={win:'Win now',youth:'Develop youth',load:'Load management'};
 // who dresses tonight, in rotation order, and how many seconds each should play
+// your team also has named backups for starters, minute caps, a playoff depth, rest-next-game and a strategy
 function rotationFor(tid,b2b,exact){
-  const rot=rotOf(tid),you=tid===S.userTid;
-  let pool=roster(tid).filter(p=>!p.inj&&!p.gl);if(pool.length<8)pool=roster(tid).filter(p=>!p.inj); // G League players come back if bodies run short
-  if(pool.length<5)pool=roster(tid);
-  const order=you&&rot.order||[];
-  pool.sort((a,b)=>{const i=order.indexOf(a.pid),j=order.indexOf(b.pid);return (i<0?99:i)-(j<0?99:j)||b.ovr-a.ovr});
+  const rot=rotOf(tid),you=tid===S.userTid,mode=you?rot.mode:null;
+  const order=you&&rot.order||[],full=roster(tid).slice().sort((a,b)=>{const i=order.indexOf(a.pid),j=order.indexOf(b.pid);return (i<0?99:i)-(j<0?99:j)||b.ovr-a.ovr});
+  let pool=full.filter(p=>!p.inj&&!p.gl);if(pool.length<8)pool=full.filter(p=>!p.inj); // G League players come back if bodies run short
+  if(pool.length<5)pool=full.slice();
   // second night of a back-to-back: your rest setting, or AI teams sitting older starters now and then
   const rested=[];
   if(b2b)pool.slice(0,5).forEach((p,i)=>{
-    const rest=you?(rot.rest==='stars'&&i<2)||(rot.rest==='vets'&&p.age>=32):p.age>=33&&rnd()<.35;
+    const rest=you?(rot.rest==='stars'&&i<2)||(rot.rest==='vets'&&p.age>=32)||(!rot.rest&&mode==='load'&&p.age>=30):p.age>=33&&rnd()<.35;
     if(rest&&pool.length-rested.length>9)rested.push(p)});
+  // players you chose to rest for the next game only
+  if(you&&!exact&&rot.restNext)rot.restNext.forEach(id=>{const p=pool.find(x=>x.pid===id);if(p&&!rested.includes(p)&&pool.length-rested.length>9)rested.push(p)});
   pool=pool.filter(p=>!rested.includes(p));
-  const slots=PRESETS[you&&rot.depth||10],ov=you&&rot.mins||{};
-  const list=pool.map((p,i)=>{let m=ov[p.pid]!=null?ov[p.pid]:(slots[i]||0)*(exact?1:.9+rnd()*.2),fixed=ov[p.pid]!=null;
+  // a missing starter's named backup takes his spot instead of everyone sliding up
+  const subs=[],bk=you&&rot.backup||{};
+  if(Object.keys(bk).length){
+    const want=full.slice(0,5),five=want.map(s=>{if(pool.includes(s))return s;const b=pById(bk[s.pid]);
+      if(b&&pool.includes(b)&&!want.includes(b)&&!subs.some(x=>x[1]===b.pid)){subs.push([s.pid,b.pid]);return b}return null});
+    const rest=pool.filter(p=>!five.includes(p));
+    pool=[...five.map(x=>x||rest.shift()).filter(Boolean),...rest];
+  }
+  const season=you&&rot.depth||(mode==='win'?8:10),depth=!you?10:S.phase==='playoffs'&&rot.po!=='same'?(rot.po===9?9:8):season;
+  const slots=PRESETS[depth],ov=you&&rot.mins||{},caps=you&&rot.cap||{};
+  const list=pool.map((p,i)=>{let base=slots[i]||0;
+    if(mode==='youth'&&i>=5){if(p.age<=24)base=base?base+6:i<12?10:0;else if(p.age>=30)base=Math.max(0,base-4)}
+    let m=ov[p.pid]!=null?ov[p.pid]:base*(exact?1:.9+rnd()*.2),fixed=ov[p.pid]!=null;
     if(p.ramp>0&&!(you&&rot.ramp===false)&&m>20){m=20;fixed=true} // easing back from an injury
-    return {p,m:clamp(m,0,44),fixed}});
-  const fixedSum=list.filter(x=>x.fixed).reduce((s,x)=>s+x.m,0),free=list.filter(x=>!x.fixed&&x.m>0),freeSum=free.reduce((s,x)=>s+x.m,0);
-  if(freeSum>0){const k=Math.max(0,240-fixedSum)/freeSum;free.forEach(x=>x.m=Math.min(44,x.m*k))}
-  return {list:list.map(x=>({p:x.p,tgt:x.m*60})),rested};
+    const cap=caps[p.pid]!=null?caps[p.pid]:mode==='load'&&p.age>=30?30:null;
+    if(cap!=null&&m>cap){m=cap;fixed=true}
+    return {p,m:clamp(m,0,44),fixed,cap}});
+  // share out what is left of 240 minutes; anyone pushed past his cap stops there and the rest is shared again
+  for(let k=0;k<4;k++){
+    const fixedSum=list.filter(x=>x.fixed).reduce((s,x)=>s+x.m,0),free=list.filter(x=>!x.fixed&&x.m>0),freeSum=free.reduce((s,x)=>s+x.m,0);
+    if(freeSum>0){const f=Math.max(0,240-fixedSum)/freeSum;free.forEach(x=>x.m=Math.min(44,x.m*f))}
+    const over=free.filter(x=>x.cap!=null&&x.m>x.cap);if(!over.length)break;over.forEach(x=>{x.m=x.cap;x.fixed=true});
+  }
+  return {list:list.map(x=>({p:x.p,tgt:x.m*60,cap:x.cap})),rested,subs,full:full.map(p=>p.pid),depth};
 }
 function teamCtx(tid,b2b){
   const {list,rested}=rotationFor(tid,b2b),rot=tid===S.userTid?rotOf(tid):{};
@@ -870,7 +891,7 @@ function teamCtx(tid,b2b){
   const hcb=(staffR(tid,'hc')-65)*.0002,chemB=(chemNow(tid)-65)*.0002,med=staffR(tid,'med'),big=bigDef(tid),L=leagueRef();
   const tr=teamTraits(tid),fp=1-schemeFam(tid); // staff specialties; an unfamiliar scheme costs up to 0.8% on offense and 0.6% on defense
   // stamina: athletes tire slower, players past 32 faster
-  const ros=list.map((x,i)=>({p:x.p,tgt:x.tgt,sec:0,e:b2b?.9:1,pf:0,gone:false,on:false,start:i<5,mood:moodOf(x.p),drain:.00075*(1.25-x.p.r.ath/200)*(x.p.age>=32?1.15:1)}));
+  const ros=list.map((x,i)=>({p:x.p,tgt:x.tgt,cap:x.cap!=null?x.cap*60:0,sec:0,e:b2b?.9:1,pf:0,gone:false,on:false,start:i<5,mood:moodOf(x.p),drain:.00075*(1.25-x.p.r.ath/200)*(x.p.age>=32?1.15:1)}));
   const byOvr=ros.slice().sort((a,b)=>b.p.ovr-a.p.ovr),cl=(rot.closers||[]).map(id=>ros.find(x=>x.p.pid===id)).filter(Boolean);
   const C={tid,ros,five:[],poss:0,out:roster(tid).filter(p=>p.inj),rested,sch,LR:L,hcb,chemB,nextEval:0,tr,offT:trO(tr)-fp*.008,clO:tr.hc==='close'?.03:0,clD:tr.hc==='close'?.015:0,tt:0,dirty:false,
     closers:new Set(cl.length?cl:byOvr.slice(0,5)),
@@ -904,8 +925,8 @@ function pickFive(C,t,margin,open){
   const opening=open,garbage=t<2880&&t>=2880-480&&Math.abs(margin)>=22,closing=t>=2880-300&&Math.abs(margin)<=10;
   const sc=x=>opening?(x.start?10:0)+x.tgt/1e4
     :garbage?-x.p.ovr-(x.tgt>0?0:5)
-    :closing?(C.closers.has(x)?10:0)+x.p.ovr/100-(x.e<.35?20:0)
-    :(x.tgt-x.sec)/R+(x.on&&x.e>=.62?.25:0)-(x.e<.6?1:0)-(!x.on&&x.e<.72?.5:0);
+    :closing?(C.closers.has(x)?10:0)+x.p.ovr/100-(x.e<.35?20:0)-(x.cap&&x.sec>=x.cap?15:0)
+    :(x.tgt-x.sec)/R+(x.on&&x.e>=.62?.25:0)-(x.e<.6?1:0)-(!x.on&&x.e<.72?.5:0)-(x.cap&&x.sec>=x.cap?5:0);
   for(const x of c)x.sc=sc(x);c.sort((a,b)=>b.sc-a.sc);
   const five=[];let bigs=0;
   for(const x of c){if(five.length>=5)break;if(isBig(x.p)&&bigs>=2)continue;five.push(x);if(isBig(x.p))bigs++}
@@ -1014,6 +1035,7 @@ function mergeLu(lu){
 function startGame(h,a,record,label){
   const H=teamCtx(h,record&&onB2B(h)),A=teamCtx(a,record&&onB2B(a)),pace=Math.round(100+(H.paceAdj+A.paceAdj)/2+randn()*4);
   const mine=h===S.userTid||a===S.userTid,L=mine?[]:null;H.L=A.L=L;H.side=0;A.side=1;
+  if(mine&&record){const r=rotOf(S.userTid);if(r.restNext)delete r.restNext}
   if(record)for(const C of [H,A])if(C.tid===S.userTid)C.lu={}; // your five-man units, regular season only
   return {h,a,record,label,H,A,pace,L,hs:0,as:0,lead:[0,0],lc:0,last:0,qs:[],q:0,i:0,sub:0,fresh:true,cm:false,t:0,now:0,off:0,hs0:0,as0:0,done:false,gw:null};
 }
@@ -2710,7 +2732,7 @@ function chemPartsOf(tid){
   const wt=core.reduce((s,p,i)=>s+MINS[i],0),fam=core.reduce((s,p,i)=>s+gelOf(p)*MINS[i],0)/wt;
   const mood=core.reduce((s,p)=>s+moodOf(p),0)/core.length;
   const roleBad=core.filter(p=>startPart(p)<0).length,lead=Math.max(0,...ro.filter(isLeader).map(leadOf)),req=ro.filter(p=>p.tradeReq).length;
-  return [['Familiarity',Math.round((fam-.75)*60)],['Morale',Math.round((mood-60)*.5)],['Roles',-Math.min(15,roleBad*5)],['Leadership',lead?Math.round(clamp((lead-50)/3,2,10)):0],['Trade requests',-req*6],['Coach',coachPart(tid)],...(tid===S.userTid?[...promChem(),...lrChem()]:[])];
+  return [['Familiarity',Math.round((fam-.75)*60)],['Morale',Math.round((mood-60)*.5)],['Roles',-Math.min(15,roleBad*5)],['Leadership',lead?Math.round(clamp((lead-50)/3,2,10)):0],['Trade requests',-req*6],['Coach',coachPart(tid)],...(tid===S.userTid?[...promChem(),...lrChem(),...stratChem()]:[])];
 }
 const chemOf=tid=>clamp(Math.round(55+chemParts(tid).reduce((s,x)=>s+x[1],0)),0,100);
 const chemLabel=c=>c>=80?'Excellent':c>=65?'Good':c>=50?'Uneven':c>=35?'Shaky':'Toxic';
@@ -5111,8 +5133,28 @@ function checkPromises(final){
   }
 }
 // your players only: the trade tag and promises show up in morale
+// how your strategy lands with your head coach (1 on board, -1 skeptical) and with each player
+const STRAT_COACH={win:{like:['disc','close'],hate:['teach']},youth:{like:['teach','players'],hate:['disc','close']},load:{like:['players'],hate:['disc']}};
+function stratCoach(){const m=rotOf(S.userTid).mode,tr=staffTrait(S.userTid,'hc');if(!m||!tr)return 0;const c=STRAT_COACH[m];return c.like.includes(tr)?1:c.hate.includes(tr)?-1:0}
+function stratMood(p){
+  const m=rotOf(S.userTid).mode;if(!m||p.tid!==S.userTid)return 0;
+  const v=m==='youth'?(p.age<=24?3:p.age>=30&&p.ovr>=50?-3:0):m==='win'?(p.age>=29?2:p.age<=23?-2:0):p.age>=30?2:0;
+  return v>0&&stratCoach()>0?v+1:v;
+}
+const stratChem=()=>stratCoach()<0?[['Strategy',-3]]:[];
+const STRAT_DESC={win:'8-man depth unless you pick one. Players 29+ like it (+2 morale), players 23 and under do not (-2).',
+  youth:'Bench players 24 and under get about 6 more minutes, so they grow more from playing time; bench players 30+ about 4 fewer. Young players +3 morale, veterans 30+ rated 50+ -3.',
+  load:'Players 30+ are capped at 30 minutes and sit on back-to-backs (unless you pick another rest setting). They like it: +2 morale.'};
+function stratQuote(){
+  const u=S.userTid,m=rotOf(u).mode,hc=T(u).staff&&T(u).staff.hc;if(!m)return '';
+  const c=stratCoach(),Q={win:['Tight rotation, best guys on the floor. That is how you win in this league.','Fine. I will shorten the bench, but the young guys need reps too.','We can push. Just know the legs will tell us in March.'],
+    youth:['Good. Kids learn by playing through their mistakes. I can live with some losses.','You want me to hand minutes to kids who have not earned them? I will do it, but I do not like it.','The young guys get their run. I will keep the vets in the loop.'],
+    load:['Smart. Fresh legs in April matter more than a win in January.','Sitting healthy players? The guys will think we are not serious.','We will manage the older guys. I will make it work.']}[m][c>0?0:c<0?1:2];
+  return `<p style="margin:.2rem 0 .5rem"><b>${ROT_MODES[m]}:</b> <span class="muted">${STRAT_DESC[m]}</span>${hc?`<br>${esc(hc.name)}${c?` <span class="pill ${c>0?'good':'warn'}">${c>0?'On board':'Skeptical'}</span>`:''}: <i>"${Q}"</i>${c?` <span class="muted" style="font-size:.85rem">${c>0?'Players who like the plan get +1 more morale.':'Chemistry -3 while it runs.'}</span>`:''}`:''}</p>`;
+}
 function userMoodParts(p){
   const o=[],k=blkOf(p);if(k)o.push(['Trade status',k==='block'?-6:4]);
+  const sm=stratMood(p);if(sm)o.push(['Team strategy',sm]);
   const pr=myProm(p)?Math.round(6*credF()):p.promB===S.season?-12:p.promK===S.season?4:0;if(pr)o.push(['Promises',pr]);
   const wl=dpMood(p);if(wl)o.push(['Workload',wl]);
   return o;
@@ -5353,10 +5395,17 @@ function renderChem(){
 // your rotation: order (first five start), minute targets, closers, and back-to-back rest
 // move or swap two players in your rotation order; insert puts a before b instead of trading places
 function rotSwap(a,b,insert){
-  const t=T(S.userTid),rot=t.rot=t.rot||{},ids=rotationFor(S.userTid,false,true).list.map(x=>x.p.pid);
+  const ids=rotationFor(S.userTid,false,true).list.map(x=>x.p.pid);
   const i=ids.indexOf(a),j=ids.indexOf(b);if(i<0||j<0||i===j)return false;
   if(insert){ids.splice(i,1);ids.splice(ids.indexOf(b)+(i<j?1:0),0,a)}else[ids[i],ids[j]]=[ids[j],ids[i]];
-  rot.order=ids;return true;
+  rotSaveOrder(ids);return true;
+}
+// save the order you see; players out tonight keep their old spot, and a stand-in hands the starter's slot back
+function rotSaveOrder(ids){
+  const R=rotationFor(S.userTid,false,true),t=T(S.userTid),rot=t.rot=t.rot||{};
+  const raw=ids.map(id=>{const s=R.subs.find(x=>x[1]===id);return s?s[0]:id});
+  R.full.forEach((id,k)=>{if(raw.includes(id))return;raw.splice(Math.min(raw.length,R.subs.some(x=>x[1]===id)?Math.max(5,k):k),0,id)});
+  rot.order=raw;
 }
 // each team's starting five and next five, averaged by skill as you see them, so yours can be ranked
 function rotUnitShape(){
@@ -5390,33 +5439,46 @@ function rotFlags(p,i,m){
   }
   return o.join('');
 }
-// your rotation: order (first five start), minute targets, closers, and back-to-back rest
+// your rotation: order (first five start), minute targets and caps, backups, closers, rest, playoffs and strategy
 function renderRotation(){
-  const u=S.userTid,rot=rotOf(u),{list}=rotationFor(u,false,true),hurt=roster(u).filter(p=>p.inj||(p.gl&&!list.some(x=>x.p===p)));
-  const ov=rot.mins||{},cl=rot.closers||[],autoCl=list.map(x=>x.p).sort((a,b)=>b.ovr-a.ovr).slice(0,5).map(p=>p.pid);
-  const closers=cl.length?cl:autoCl,total=Math.round(list.reduce((s,x)=>s+x.tgt,0)/60);
+  const u=S.userTid,rot=rotOf(u),{list,subs,depth}=rotationFor(u,false,true),hurt=roster(u).filter(p=>p.inj||(p.gl&&!list.some(x=>x.p===p)));
+  const ov=rot.mins||{},caps=rot.cap||{},bk=rot.backup||{},rn=rot.restNext||[],cl=rot.closers||[],autoCl=list.map(x=>x.p).sort((a,b)=>b.ovr-a.ovr).slice(0,5).map(p=>p.pid);
+  const closers=cl.length?cl:autoCl,total=Math.round(list.reduce((s,x)=>s+x.tgt,0)/60),inSeason=S.phase==='regular'||S.phase==='playoffs';
+  const five=list.slice(0,5).map(x=>x.p),nm=id=>{const p=pById(id);return p?esc(p.name):''};
   if(UI.rotSel!=null&&!list.some(x=>x.p.pid===UI.rotSel))UI.rotSel=null;
   const selP=UI.rotSel!=null&&pById(UI.rotSel);
-  const row=(x,i)=>{const p=x.p,m=Math.round(x.tgt/60),mpgN=p.st.gp?p.st.min/p.st.gp:null,mpg=mpgN!=null?r1(mpgN):'–',sel=UI.rotSel===p.pid;
+  // starters pick who steps in when they are out; a stand-in's row edits the missing starter's pick
+  const bkCell=(p,i)=>{
+    if(i>=5){const of=Object.keys(bk).filter(s=>bk[s]===p.pid&&roster(u).some(x=>x.pid===Number(s)));return `<td class="l">${of.length?`<small class="muted">Backs up ${of.map(s=>nm(Number(s))).join(', ')}</small>`:''}</td>`}
+    const sub=subs.find(s=>s[1]===p.pid),own=sub?sub[0]:p.pid;
+    const opts=roster(u).filter(x=>x.pid!==own&&(!five.includes(x)||x.pid===bk[own])).sort((a,b)=>b.ovr-a.ovr);
+    return `<td class="l"><select class="rot-bk" data-pid="${own}" aria-label="Backup for ${nm(own)}" style="max-width:9.5em"><option value="">Next up</option>${opts.map(x=>`<option value="${x.pid}" ${bk[own]===x.pid?'selected':''}>${esc(x.name)} (${x.pos})</option>`).join('')}</select></td>`};
+  const row=(x,i)=>{const p=x.p,m=Math.round(x.tgt/60),mpgN=p.st.gp?p.st.min/p.st.gp:null,mpg=mpgN!=null?r1(mpgN):'–',sel=UI.rotSel===p.pid,sub=subs.find(s=>s[1]===p.pid),rest=rn.includes(p.pid);
     // players judge their role by the minutes they get, so show how far the real number drifts from the plan
     const gap=mpgN!=null&&p.st.gp>=3?Math.round(mpgN-m):0;
     const mpgCell=Math.abs(gap)>=4?`<span class="warn" title="Averages ${mpg}, target ${m}">${mpg}</span> <small class="muted">${gap>0?'+':''}${gap}</small>`:mpg;
     return `<tr class="${[i===5?'cut':'',sel?'sel':''].filter(Boolean).join(' ')}" data-rpid="${p.pid}"><td class="l num"><button class="btn small rot-pick${sel?' primary':''}" data-act="rotPick" data-arg="${p.pid}" title="${sel?'Tap again to cancel':selP?`Swap with ${esc(selP.name)}`:'Tap, then tap another number to swap'}" aria-label="${selP&&!sel?`Swap ${esc(p.name)} with ${esc(selP.name)}`:`Pick ${esc(p.name)} to swap`}" aria-pressed="${sel}">${i+1}</button></td><td class="l" draggable="true" title="Drag to move">${plink(p.pid,p.name)} <span class="muted">${p.pos}</span>${p.ramp>0?' <span class="pill warn" title="Back from injury: 20-minute limit">Limit</span>':''}</td><td class="ovr">${p.ovr}</td>
-     <td class="l">${i<5?'<b>Starter</b>':i===5&&m>0?'Sixth man':m>0?'Rotation':'<span class="muted">Reserve</span>'}${i>=5&&wantsStart(p)?(roleOK(p)?' <span class="pill good" title="Accepted a bench role this season">OK</span>':' <span class="pill warn" title="Starter-level player: unhappy coming off the bench">Wants to start</span>'):''}${gelOf(p)<.8?` <span class="pill muted" title="Still learning the system">New ${Math.round(gelOf(p)*100)}%</span>`:''}${rotFlags(p,i,m)}</td>
+     <td class="l">${i<5?'<b>Starter</b>':i===5&&m>0?'Sixth man':m>0?'Rotation':'<span class="muted">Reserve</span>'}${sub?` <span class="pill muted" title="${nm(sub[0])} is out; his backup takes his spot">For ${nm(sub[0])}</span>`:''}${rest?' <span class="pill warn" title="Sits out your next game, then returns">Rests next game</span>':''}${i>=5&&wantsStart(p)?(roleOK(p)?' <span class="pill good" title="Accepted a bench role this season">OK</span>':' <span class="pill warn" title="Starter-level player: unhappy coming off the bench">Wants to start</span>'):''}${gelOf(p)<.8?` <span class="pill muted" title="Still learning the system">New ${Math.round(gelOf(p)*100)}%</span>`:''}${rotFlags(p,i,m)}</td>
      <td><input class="plan-in rot-min" type="number" min="0" max="44" step="1" inputmode="numeric" data-pid="${p.pid}" value="${ov[p.pid]!=null?ov[p.pid]:''}" placeholder="${m}" aria-label="Minute target for ${esc(p.name)}" style="width:4.5em"></td>
-     <td>${mpgCell}</td><td>${moodTag(p)}</td>
+     <td><input class="plan-in rot-cap" type="number" min="10" max="44" step="1" inputmode="numeric" data-pid="${p.pid}" value="${caps[p.pid]!=null?caps[p.pid]:''}" placeholder="${x.cap!=null?x.cap:'–'}" aria-label="Minute cap for ${esc(p.name)}" style="width:4em"></td>
+     <td>${mpgCell}</td><td>${moodTag(p)}</td>${bkCell(p,i)}
      <td class="l"><button class="btn small${closers.includes(p.pid)?' primary':''}" data-act="rotCloser" data-arg="${p.pid}" title="Plays the end of close games" aria-label="Closer: ${esc(p.name)}">Closer</button>
+      ${inSeason?`<button class="btn small${rest?' primary':''}" data-act="rotRestNext" data-arg="${p.pid}" title="Sits out your next game only" aria-label="Rest ${esc(p.name)} next game" aria-pressed="${rest}">Rest</button>`:''}
       <button class="btn small" data-act="rotMove" data-arg="${p.pid}:-1" ${i===0?'disabled':''} aria-label="Move ${esc(p.name)} up">▲</button><button class="btn small" data-act="rotMove" data-arg="${p.pid}:1" ${i===list.length-1?'disabled':''} aria-label="Move ${esc(p.name)} down">▼</button></td></tr>`};
   return `<div class="panel"><div class="spread"><h2>Rotation</h2><div class="row">
-    <label class="opt">Depth <select id="rotDepth">${[8,9,10].map(n=>`<option value="${n}" ${(rot.depth||10)===n?'selected':''}>${n}-man</option>`).join('')}</select></label>
-    <label class="opt">Back-to-backs <select id="rotRest"><option value="">Play everyone</option><option value="vets" ${rot.rest==='vets'?'selected':''}>Rest players 32+</option><option value="stars" ${rot.rest==='stars'?'selected':''}>Rest top 2</option></select></label>
+    <label class="opt">Strategy <select id="rotMode"><option value="">Balanced</option>${Object.entries(ROT_MODES).map(([k,v])=>`<option value="${k}" ${rot.mode===k?'selected':''}>${v}</option>`).join('')}</select></label>
+    <label class="opt">Depth <select id="rotDepth">${!rot.depth&&rot.mode==='win'?'<option value="" selected>8-man (strategy)</option>':''}${[8,9,10].map(n=>`<option value="${n}" ${(rot.depth||(rot.mode==='win'?0:10))===n?'selected':''}>${n}-man</option>`).join('')}</select></label>
+    <label class="opt">Playoffs <select id="rotPo"><option value="">Tighten to 8</option><option value="9" ${rot.po===9?'selected':''}>Tighten to 9</option><option value="same" ${rot.po==='same'?'selected':''}>Same as season</option></select></label>
+    <label class="opt">Back-to-backs <select id="rotRest"><option value="">${rot.mode==='load'?'Strategy: rest 30+':'Play everyone'}</option><option value="vets" ${rot.rest==='vets'?'selected':''}>Rest players 32+</option><option value="stars" ${rot.rest==='stars'?'selected':''}>Rest top 2</option></select></label>
     <label class="opt"><input type="checkbox" class="check" id="rotRamp" ${rot.ramp===false?'':'checked'}> Ease players back from injuries</label>
     <button class="btn small" data-act="rotReset">Reset to auto</button></div></div>
+   ${stratQuote()}
    ${rotUnits(list)}
-   <p class="muted">The first five start. Tap a player's number, then another, to swap them${matchMedia('(hover:hover)').matches?', or drag a row to a new spot':''}. Minute targets are what your coach aims for; fatigue, foul trouble, blowouts and close finishes move them around. Leave a box blank to use the depth chart's number. Closers play the last five minutes of games within 10 points${cl.length?'':' (now: your five best players)'}. Players judge their role by the minutes they actually get: MPG turns orange when it is 4+ off the target.</p>
+   <p class="muted">The first five start. Tap a player's number, then another, to swap them${matchMedia('(hover:hover)').matches?', or drag a row to a new spot':''}. Minute targets are what your coach aims for; fatigue, foul trouble, blowouts and close finishes move them around. A cap is a hard limit: he sits once he reaches it, except to open a half. Pick a backup for each starter and he takes that starter's spot when he is hurt or resting; otherwise everyone moves up. Closers play the last five minutes of games within 10 points${cl.length?'':' (now: your five best players)'}. Players judge their role by the minutes they actually get: MPG turns orange when it is 4+ off the target.</p>
+   ${S.phase==='playoffs'?`<p><span class="pill tv">Playoff rotation</span> <span class="muted">${depth}-man${rot.po==='same'?', same as the season':''}. Change it with Playoffs above.</span></p>`:''}
    ${selP?`<p class="row" role="status"><b>Swapping ${esc(selP.name)}:</b> <span class="muted">tap another player's number.</span> <button class="btn small" data-act="rotPick" data-arg="${selP.pid}">Cancel</button></p>`:''}
-   <div class="scroll"><table class="rot-tbl"><thead><tr><th class="l">#</th><th class="l">Player</th><th${tipAttr('Ovr')}>Ovr</th><th class="l">Role</th><th title="Minutes you want him to play each game">Target min</th><th${tipAttr('MPG')}>MPG</th><th class="l">Mood</th><th></th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>
-   <p class="muted num" style="font-size:.85rem">Planned minutes: ${total} of 240.${total>242?' <b class="warn">Over 240: everyone else gets squeezed.</b>':''}${hurt.length?` Unavailable: ${hurt.map(p=>esc(p.name)+(p.inj?` (${injLc(p.inj.type)})`:' (G League)')).join(', ')}.`:''}</p></div>`;
+   <div class="scroll"><table class="rot-tbl"><thead><tr><th class="l">#</th><th class="l">Player</th><th${tipAttr('Ovr')}>Ovr</th><th class="l">Role</th><th title="Minutes you want him to play each game">Target min</th><th title="Hard cap: he sits once he reaches it">Max</th><th${tipAttr('MPG')}>MPG</th><th class="l">Mood</th><th class="l" title="Who takes this starter's spot when he is out">Backup</th><th></th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>
+   <p class="muted num" style="font-size:.85rem">Planned minutes: ${total} of 240.${total>242?' <b class="warn">Over 240: everyone else gets squeezed.</b>':''}${hurt.length?` Unavailable: ${hurt.map(p=>{const s=subs.find(x=>x[0]===p.pid);return esc(p.name)+(p.inj?` (${injLc(p.inj.type)})`:' (G League)')+(s?`, ${nm(s[1])} starts for him`:'')}).join(', ')}.`:''}</p></div>`;
 }
 // ---------- cap sheet and summer planner ----------
 // salary a player is owed in a given season, including a signed extension
@@ -6477,12 +6539,13 @@ document.addEventListener('click',e=>{
     case 'recView':UI.recView=arg;break;
     case 'rotMove':{const [id,dir]=arg.split(':').map(Number),t=T(S.userTid),rot=t.rot=t.rot||{};
       const ids=rotationFor(S.userTid,false,true).list.map(x=>x.p.pid),i=ids.indexOf(id),j=i+dir;
-      if(i<0||j<0||j>=ids.length)break;[ids[i],ids[j]]=[ids[j],ids[i]];rot.order=ids;break}
+      if(i<0||j<0||j>=ids.length)break;[ids[i],ids[j]]=[ids[j],ids[i]];rotSaveOrder(ids);break}
     case 'rotCloser':{const t=T(S.userTid),rot=t.rot=t.rot||{};
       let cl=rot.closers&&rot.closers.length?rot.closers.slice():rotationFor(S.userTid,false,true).list.map(x=>x.p).sort((a,b)=>b.ovr-a.ovr).slice(0,5).map(p=>p.pid);
       if(cl.includes(num))cl=cl.filter(x=>x!==num);else if(cl.length<5)cl.push(num);else{toast('Five closers at most. Remove one first.');return}
       rot.closers=cl;break}
     case 'rotReset':delete T(S.userTid).rot;UI.rotSel=null;break;
+    case 'rotRestNext':{const t=T(S.userTid),rot=t.rot=t.rot||{},l=rot.restNext||[];rot.restNext=l.includes(num)?l.filter(x=>x!==num):[...l,num];if(!rot.restNext.length)delete rot.restNext;break}
     case 'rotPick':if(UI.rotSel==null||UI.rotSel===num)UI.rotSel=UI.rotSel===num?null:num;else{rotSwap(UI.rotSel,num);UI.rotSel=null}break;
     case 'modal':return;
     case 'findFor':case 'findShop':{
@@ -6567,11 +6630,16 @@ document.addEventListener('change',e=>{
   if(el.dataset.tf){const f=tfState(),k=el.dataset.tf;f[k]=el.type==='checkbox'?el.checked:el.value.trim();f.n=TF_DEF.n;render();return}
   if(el.dataset.dp){setPlan(pById(Number(el.dataset.dp)),el.value);save();render();return}
   if(el.dataset.dpi){const p=pById(Number(el.dataset.dpi)),d=planOf(p);if(d)setPlan(p,d.k,el.value);save();render();return}
-  if(!(el.id==='rotDepth'||el.id==='rotRest'||el.id==='rotRamp'||el.classList.contains('rot-min')))return;
+  if(!(['rotDepth','rotRest','rotRamp','rotMode','rotPo'].includes(el.id)||el.classList.contains('rot-min')||el.classList.contains('rot-cap')||el.classList.contains('rot-bk')))return;
   const t=T(S.userTid),rot=t.rot=t.rot||{};
-  if(el.id==='rotDepth')rot.depth=Number(el.value);
+  if(el.id==='rotDepth')rot.depth=Number(el.value)||undefined;
   else if(el.id==='rotRest')rot.rest=el.value||undefined;
   else if(el.id==='rotRamp')rot.ramp=el.checked?undefined:false;
+  else if(el.id==='rotMode'){rot.mode=el.value||undefined;const c=stratCoach();if(rot.mode)toast(`Strategy: ${ROT_MODES[rot.mode]}.${c>0?' Your coach is on board.':c<0?' Your coach is skeptical.':''}`)}
+  else if(el.id==='rotPo')rot.po=el.value===''?undefined:el.value==='same'?'same':Number(el.value);
+  else if(el.classList.contains('rot-bk')){const s=Number(el.dataset.pid);rot.backup=rot.backup||{};if(el.value)rot.backup[s]=Number(el.value);else delete rot.backup[s]}
+  else if(el.classList.contains('rot-cap')){const v=el.value.trim(),pid=Number(el.dataset.pid);rot.cap=rot.cap||{};
+    if(v==='')delete rot.cap[pid];else{const n=Number(v);if(!(n>=10&&n<=44)){toast('Minute caps run from 10 to 44.');render();return}rot.cap[pid]=Math.round(n)}}
   else{const v=el.value.trim(),pid=Number(el.dataset.pid);rot.mins=rot.mins||{};
     if(v==='')delete rot.mins[pid];else{const n=Number(v);if(!(n>=0&&n<=44)){toast('Minute targets run from 0 to 44.');render();return}rot.mins[pid]=Math.round(n)}}
   save();render();
