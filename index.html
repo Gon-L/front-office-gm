@@ -2870,7 +2870,7 @@ function moodTag(p){
 function startPlayoffs(){
   giveAwards();
   seasonRecords();
-  chargeTax();
+  chargeTax();chargeFloor();
   const mk=(s,conf)=>[[0,7],[3,4],[1,6],[2,5]].map(([i,j])=>({a:s[i].tid,b:s[j].tid,sa:i+1,sb:j+1,wa:0,wb:0,conf}));
   const E=confStand('E'),W=confStand('W');
   S.po={rounds:[[...mk(E,'E'),...mk(W,'W')]],champ:null,seeded:[...E.slice(0,8),...W.slice(0,8)].map(t=>t.tid)};
@@ -3347,7 +3347,7 @@ function toFreeAgency(){
     else{const ovrs=roster(p.tid).map(x=>x.ovr).sort((a,b)=>b-a),top8=ovrs[7]||45; // AI teams usually keep their rotation, if the money works
       keep=(p.ovr>=top8?rnd()<.8:p.age<=24&&p.pot>=58?rnd()<.55:false)&&nextYearPayroll(p.tid)+p.ask<TAX+(p.ovr>=ovrs[2]?30:10) // and pay into the tax for a top-3 player
         &&(p.ask<=birdOf(p).lim+.001||nextYearPayroll(p.tid)+p.ask<=CAP)} // over his Bird limit it takes cap space
-    if(keep){if(p.ask>p.contract.amt*1.2&&p.ask>minFor(p)+.001)p.tlock=(S.season+1)*1000+100+DEC15;p.contract=mkC(p.ask,p.askYrs,S.season+1,true,p);if(p.askOpt!=null){setOpt(p.contract,p.askOpt);delete p.askOpt}}
+    if(keep){if(p.ask>p.contract.amt*1.2&&p.ask>minFor(p)+.001)p.tlock=(S.season+1)*1000+100+DEC15;p.contract=mkC(p.ask,p.askYrs,S.season+1,true,p);if(p.askOpt!=null){setOpt(p.contract,p.askOpt);delete p.askOpt}addClauses(p,true)}
     else{const mine=p.tid===S.userTid,hold=mine&&!p.refuse&&p.resign!=='no',rk=p.contract.rk,o=p.tid;
       // a rookie-scale player gets a qualifying offer: yours unless you let him go, an AI team's if he is worth keeping
       const rfa=rk&&!p.refuse&&(mine?hold:p.ovr>=45||p.pot>=55)?{tid:o,qo:qoOf(p)}:null;
@@ -3415,7 +3415,8 @@ function excRows(tid){
   return [['Non-taxpayer mid-level',`${money(MLE)}, up to 4 years, can be split. Hard-caps you at the first apron`,...nt],
     ['Taxpayer mid-level',`${money(MLE_TP)}, up to 2 years, can be split. Hard-caps you at the second apron`,...tp],
     ['Room mid-level',`${money(MLE_ROOM)}, up to 3 years, for teams that used cap space`,...rm],
-    ['Bi-annual',`${money(BAE)}, up to 2 years, every other season. Hard-caps you at the first apron`,...ba]];
+    ['Bi-annual',`${money(BAE)}, up to 2 years, every other season. Hard-caps you at the first apron`,...ba],
+    ...tpesOf(tid).map(x=>['Traded player exception',`From trading ${esc(x.from)}. Absorbs incoming salary in a trade without sending any back, until ${calTxt(x.until)} ${Math.floor(x.until/1000)}. Not above the first apron; using it hard-caps you there`,`${money(x.amt)} left`,1])];
 }
 function canSign(tid,p,room){
   const n=roster(tid).length,max=S.phase==='freeagency'?17:15;
@@ -3437,7 +3438,7 @@ function sign(tid,p,amt,yrs,match){
   const last=p.lastSal||0;
   delete p.idle;delete p.agg;delete p.rights;delete p.rfa;p.tid=tid;p.contract=mkC(amt,yrs,S.season,own,p);p.ask=0;p.askYrs=yrs;
   if(own){if(amt>last*1.2&&amt>minFor(p)+.001)p.tlock=signLock();else delete p.tlock}else{p.byrs=0;p.tlock=signLock()}
-  delete p.tfrom;newTeamMood(p)}
+  addClauses(p,own);delete p.tfrom;newTeamMood(p)}
 function faDay(){noting(faDay0)}
 function faDay0(){
   S.faDay++;S.tick++;
@@ -3673,23 +3674,74 @@ function matchLimit(out,after){
 }
 // above the second apron a team's first-round pick furthest out is frozen (the real rule: seven years out)
 const farYear=()=>Math.max(...S.picks.map(k=>k.season));
-function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null){
+// ---------- trade extras: traded player exceptions, cash, kickers and no-trade clauses ----------
+// a team over the cap that sends out more salary than it takes back gets a traded player exception for a year: it
+// absorbs incoming salary in a later trade without sending any back (only at or under the first apron, and using one
+// hard-caps the team there)
+const CASH_MAX=7.9; // cash a team can send, and receive, in trades each season
+const FLOOR_PCT=.9; // minimum team salary: 90% of the cap, or the team pays the shortfall to its players
+const tpesOf=tid=>{const t=T(tid);return t.tpe=(t.tpe||[]).filter(e=>e.until>cal()&&e.amt>=.1)};
+const tpeFit=(tid,net)=>tpesOf(tid).filter(e=>e.amt+.25>=net).sort((a,b)=>a.amt-b.amt)[0]||null;
+const tAmt=p=>r1(p.contract.amt*(1+(p.contract.kick||0))); // what the receiving team takes on, trade kicker included
+// a no-trade clause is waived only to join a contender, or by a player who wants out
+const ntcBlock=(p,dest)=>!!(p.contract&&p.contract.ntc)&&!(p.tradeReq||moodOf(p)<40||teamMode(dest)==='contending');
+const cashLeft=(tid,k)=>{const c=(T(tid).cash||{})[S.season]||{};return r1(CASH_MAX-(c[k]||0))};
+function addClauses(p,own){
+  const c=p.contract;if(!c)return;
+  if(own&&svcOf(p)>=8&&(p.byrs||0)>=4&&p.ovr>=62&&rnd()<.25)c.ntc=1;
+  if(c.amt>=15&&p.age>=26&&rnd()<.12)c.kick=pick([.05,.1,.15]);
+}
+// opening rosters: a few long-serving stars have no-trade clauses, some big contracts carry trade kickers
+function seedClauses(){
+  for(const p of S.players){const c=p.contract;if(p.tid<0||!c)continue;
+    if(svcOf(p)>=8&&p.ovr>=64&&c.amt>=30&&rnd()<.3)c.ntc=1;
+    if(c.amt>=15&&p.age>=26&&rnd()<.15)c.kick=pick([.05,.1,.15])}
+}
+// at the trade: exceptions used or created, then trade kickers paid (his salary rises by the bonus for the rest of the deal)
+function tradeCap(a,b,aP,bP){
+  const sum=(ps,f)=>r1(ps.reduce((s,p)=>s+f(p),0));
+  for(const [tid,outP,inP] of [[a,aP,bP],[b,bP,aP]]){
+    const give=sum(outP,p=>p.contract.amt),get=sum(inP,tAmt),after=r1(payroll(tid)-give+get),you=tid===S.userTid;
+    if(after<=CAP)continue;
+    if(get>matchLimit(give,after)){const x=tpeFit(tid,r1(get-give));if(!x)continue;
+      x.amt=r1(Math.max(0,x.amt-(get-give)));const e=exOf(tid);if(!e.hard||APRON1<e.hard){e.hard=APRON1;e.hardBy='using a traded player exception'}
+      if(you)news(`You used ${money(r1(get-give))} of your traded player exception. It hard-caps you at the ${money(APRON1)} first apron this season.`)}
+    else if(give>get+.9&&outP.length){const amt=r1(Math.min(give-get,Math.max(...outP.map(p=>p.contract.amt))));
+      tpesOf(tid).push({amt,until:cal()+1000,from:outP.map(p=>p.name).join(', ')});
+      if(you)news(`You created a ${money(amt)} traded player exception. It can absorb salary in a trade for the next year.`)}
+  }
+  for(const p of [...aP,...bP]){const c=p.contract;if(!c||!c.kick)continue;
+    const f=1+c.kick,k=Math.round(c.kick*100);c.amt=r1(Math.min(maxFor(p),c.amt*f));if(c.b!=null)c.b=r1(c.b*f);if(c.aav)c.aav=r1(c.aav*f);delete c.kick;
+    if(a===S.userTid||b===S.userTid)news(`${p.name}'s ${k}% trade kicker paid out: his salary rises to ${money(c.amt)}.`)}
+}
+// minimum team salary, checked when the regular season ends
+function chargeFloor(){
+  const fl=r1(CAP*FLOOR_PCT);
+  for(const t of S.teams){const short=r1(fl-payroll(t.tid));if(short<=0)continue;
+    t.biz.fin.exp.payroll+=short;if(t.tid===S.userTid)news(`Your payroll finished below the ${money(fl)} minimum team salary, so you paid the ${money(short)} shortfall to your players.`)}
+}
+function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null,cash=0){
   const mp=mine.map(pById),tp=theirs.map(pById),mk=mPk.map(pickById),tk=tPk.map(pickById),reasons=[];
   const mode=ctx?ctx.mode:teamMode(otherTid),sl=ctx?ctx.sl:pickSlots();
   const sumAmt=a=>r1(a.reduce((s,p)=>s+p.contract.amt,0));
   const out=sumAmt(mp),inn=sumAmt(tp); // from user perspective
+  const outK=r1(mp.reduce((s,p)=>s+tAmt(p),0)),innK=r1(tp.reduce((s,p)=>s+tAmt(p),0)),tpeUse=[];
   const lim=S.phase==='regular'?[13,15]:[10,17];
   const chk=(tid,give,get,label)=>{
     const after=r1(payroll(tid)-give+get),lim=matchLimit(give,after),you=label==='You',nOut=you?mp.length:tp.length,hard=hardOf(tid);
     if(after>APRON2&&get>0&&nOut>1)reasons.push(`${you?'You':label} would be above the ${money(APRON2)} second apron, where teams can't combine players' salaries to take one back. Send one player for the incoming salary.`);
     if(hard&&after>hard&&get>give)reasons.push(`${you?'You are':label+' is'} hard-capped at ${money(hard)} this season after ${exOf(tid).hardBy}. This deal would reach ${money(after)}.`);
-    if(after>CAP&&get>lim)reasons.push(`${label} would be over the cap after this deal, so ${label==='You'?'you':'they'} can take back at most ${money(lim)} for ${money(give)} sent out${after>APRON1?' (above the apron: no more than you send)':''}. Incoming: ${money(get)}.`);
+    if(after>CAP&&get>lim){const x=after<=APRON1?tpeFit(tid,r1(get-give)):null;if(x)tpeUse.push({tid,amt:r1(get-give),left:x.amt});else reasons.push(`${label} would be over the cap after this deal, so ${label==='You'?'you':'they'} can take back at most ${money(lim)} for ${money(give)} sent out${after>APRON1?' (above the apron: no more than you send)':''}. Incoming: ${money(get)}.${exOf(tid).hard||after>APRON1||!tpesOf(tid).length?'':` ${tpesOf(tid).length>1?'Their':'The'} traded player exception${tpesOf(tid).length>1?'s are':' is'} too small (${tpesOf(tid).map(e=>money(e.amt)).join(', ')}).`}`)}
     const n=roster(tid).length-(label==='You'?mp.length:tp.length)+(label==='You'?tp.length:mp.length);
     if(n>lim[1])reasons.push(`${label==='You'?'Your':T(otherTid).abbr} roster would have ${n} players (max ${lim[1]}).`);
     if(n<lim[0])reasons.push(`${label==='You'?'Your':T(otherTid).abbr} roster would drop to ${n} players (min ${lim[0]}).`);
     return after;
   };
-  const youAfter=chk(S.userTid,out,inn,'You'),themAfter=chk(otherTid,inn,out,T(otherTid).abbr);
+  const youAfter=chk(S.userTid,out,innK,'You'),themAfter=chk(otherTid,inn,outK,T(otherTid).abbr);
+  mp.forEach(p=>{if(ntcBlock(p,otherTid))reasons.push(`${p.name} has a no-trade clause and won't waive it to join the ${tname(otherTid)}. He'd go to a contender, or if he wanted out.`)});
+  tp.forEach(p=>{if(ntcBlock(p,S.userTid))reasons.push(`${p.name} has a no-trade clause and won't waive it to join your team. He'd go to a contender, or if he wanted out.`)});
+  if(cash>0&&(cash>cashLeft(S.userTid,'out')+.001||cash>cashLeft(otherTid,'in')+.001))reasons.push(`Teams can send and receive at most ${money(CASH_MAX)} in cash in trades each season.`);
+  if(cash<0&&(-cash>cashLeft(otherTid,'out')+.001||-cash>cashLeft(S.userTid,'in')+.001))reasons.push(`Teams can send and receive at most ${money(CASH_MAX)} in cash in trades each season.`);
   if(youAfter-(S.phase==='freeagency'?holdsOf(S.userTid):0)>ownerLimit()&&inn>out)reasons.push(`Your owner won't approve a payroll above ${money(ownerLimit())}. This deal would put you at ${money(youAfter)}.`);
   for(const [tid,out,inn] of [[S.userTid,mk,tk],[otherTid,tk,mk]]){
     const s=stepienIssue(tid,S.picks.filter(k=>k.owner===tid&&!out.includes(k)).concat(inn));if(s)reasons.push(s);
@@ -3706,24 +3758,28 @@ function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null){
   const get=inVals.reduce((s,v,i)=>s+(i>=Math.max(1,tp.length)&&v>0?v*.6:v),0)+pv(mk)-Math.max(0,mp.length-tp.length)*4;
   const give=tp.reduce((s,p)=>s+tradeValue(p,mode,otherTid),0)+pv(tk);
   // the AI wants a small premium; ratio 1 means exactly enough
-  const need=Math.max(0,give)*1.02+1,ratio=Math.max(0,get)/need;
+  const cv=Math.abs(cash)*.8; // cash is worth a little to a front office: $5M is about a second-round pick
+  const need=(Math.max(0,give)+(cash<0?cv:0))*1.02+1,ratio=Math.max(0,get+(cash>0?cv:0))/need;
   const valueOk=ratio>1;
-  return {mode,out,inn,youAfter,themAfter,get,give,ratio,valueOk,legal:reasons.length===0,reasons,empty:!mp.length&&!tp.length&&!mk.length&&!tk.length};
+  return {mode,out,inn,youAfter,themAfter,get,give,ratio,valueOk,legal:reasons.length===0,reasons,tpeUse,cash,empty:!mp.length&&!tp.length&&!mk.length&&!tk.length};
 }
 function proposeTrade(){
-  const tid=UI.tradeTid,mine=[...UI.tm],theirs=[...UI.tt],mk=[...UI.pm],tk=[...UI.pt],e=evalTrade(tid,mine,theirs,mk,tk);
+  const tid=UI.tradeTid,mine=[...UI.tm],theirs=[...UI.tt],mk=[...UI.pm],tk=[...UI.pt],cash=UI.cash||0,e=evalTrade(tid,mine,theirs,mk,tk,null,cash);
   if(e.empty){toast('Pick at least one player or draft pick.');return}
   if(!e.legal){toast(e.reasons[0]);return}
   if(!e.valueOk){toast(`${T(tid).abbr} turned it down. They want more value back.`);return}
-  doTrade(tid,mine,theirs,mk,tk);
+  doTrade(tid,mine,theirs,mk,tk,cash);
   toast('Trade accepted.');clearTrade();
 }
 const tradeNames=(ps,ks)=>[...ps.map(pid=>pById(pid).name),...ks.map(id=>pickLabel(pickById(id))+' pick')].join(', ')||'nothing';
-function doTrade(tid,mine,theirs,mk,tk){
+function doTrade(tid,mine,theirs,mk,tk,cash=0){
   const u0={pay:payroll(S.userTid),ovr:teamOvr(S.userTid)},ps=[...mine,...theirs].map(pById),avgAge=a=>a.length?a.reduce((s,p)=>s+p.age,0)/a.length:0;
   const bigDeal=ps.some(p=>p.ovr>=58)||[...mk,...tk].some(id=>pickById(id).rd===1),dAge=theirs.length&&mine.length?avgAge(theirs.map(pById))-avgAge(mine.map(pById)):0;
   jerseyTradeHit(mine);
-  news(`Trade with ${tname(tid)}: you sent ${tradeNames(mine,mk)} for ${tradeNames(theirs,tk)}.`);
+  news(`Trade with ${tname(tid)}: you sent ${tradeNames(mine,mk)}${cash>0?` and ${money(cash)} cash`:''} for ${tradeNames(theirs,tk)}${cash<0?` and ${money(-cash)} cash`:''}.`);
+  tradeCap(S.userTid,tid,mine.map(pById),theirs.map(pById));
+  if(cash){const [from,to]=cash>0?[S.userTid,tid]:[tid,S.userTid],c=Math.abs(cash),add=(t,k)=>{const m=t.cash=t.cash||{},y=m[S.season]=m[S.season]||{};y[k]=r1((y[k]||0)+c)};
+    add(T(from),'out');add(T(to),'in');T(from).biz.fin.exp.cash=r1((T(from).biz.fin.exp.cash||0)+c);T(to).biz.fin.rev.cash=r1((T(to).biz.fin.rev.cash||0)+c)}
   const gotNames=tradeNames(theirs,tk);
   mine.forEach(pid=>{const p=pById(pid);p.tid=tid;p.agg=aggUntil();newTeamMood(p)});theirs.forEach(pid=>{const p=pById(pid);p.tid=S.userTid;p.agg=aggUntil();newTeamMood(p)});
   mk.forEach(id=>pickById(id).owner=tid);tk.forEach(id=>pickById(id).owner=S.userTid);
@@ -3735,7 +3791,7 @@ function doTrade(tid,mine,theirs,mk,tk){
   syncDraftOrder();
   if(S.phase==='draft')aiDraftUntilUser(); // if you traded away the pick on the clock, the new owner picks now
 }
-function clearTrade(){UI.tm.clear();UI.tt.clear();UI.pm.clear();UI.pt.clear()}
+function clearTrade(){UI.tm.clear();UI.tt.clear();UI.pm.clear();UI.pt.clear();UI.cash=0}
 // after this year's picks change hands, the remaining draft order follows the new owners
 function syncDraftOrder(){
   if(!S.draft||!S.draft.orig||!['combine','draft'].includes(S.phase))return;
@@ -3798,7 +3854,8 @@ function sideOk(tid,ctx,inP,inK,outP,outK){
 function aiLegal(a,b,aP,bP,aK,bK){
   const lim=S.phase==='regular'?[13,15]:[10,17];
   for(const [tid,outP,inP,outK,inK] of [[a,aP,bP,aK,bK],[b,bP,aP,bK,aK]]){
-    const out=outP.reduce((s,p)=>s+p.contract.amt,0),inn=inP.reduce((s,p)=>s+p.contract.amt,0),after=payroll(tid)-out+inn;
+    const out=outP.reduce((s,p)=>s+p.contract.amt,0),inn=inP.reduce((s,p)=>s+tAmt(p),0),after=payroll(tid)-out+inn;
+    if(inP.some(p=>ntcBlock(p,tid)))return false;
     if(after>CAP&&inn>matchLimit(out,after))return false;
     if(after>APRON2&&inn>0&&outP.length>1)return false;
     const hard=hardOf(tid);if(hard&&after>hard&&inn>out)return false;
@@ -3842,7 +3899,9 @@ function calTxt(c){
   return `${['early','mid','late'][Math.min(2,Math.floor((d%28)/9.34))]} ${MONTHS[Math.min(MONTHS.length-1,Math.floor(d/28))]} (day ${d+1})`;
 }
 const lockTxt=p=>lockOn(p)?`Signed recently: can't be traded until ${calTxt(p.tlock)}.`:aggOn(p)?`Just acquired: can be traded alone, but not packaged with other players until ${calTxt(p.agg)}.`:'';
-const lockPill=p=>lockOn(p)?`<span class="pill warn" title="${esc(lockTxt(p))}">Can't trade yet</span> `:aggOn(p)?`<span class="pill" title="${esc(lockTxt(p))}">Just acquired</span> `:'';
+const lockPill=p=>(lockOn(p)?`<span class="pill warn" title="${esc(lockTxt(p))}">Can't trade yet</span> `:aggOn(p)?`<span class="pill" title="${esc(lockTxt(p))}">Just acquired</span> `:'')
+  +(p.contract&&p.contract.ntc?'<span class="pill warn" title="No-trade clause: he only waives it to join a contender, or if he wants out">NTC</span> ':'')
+  +(p.contract&&p.contract.kick?`<span class="pill" title="Trade kicker: his salary rises ${Math.round(p.contract.kick*100)}% when he is traded, and the receiving team counts the higher salary">Kicker ${Math.round(p.contract.kick*100)}%</span> `:'');
 const recentlyMoved=p=>lockOn(p)||p.acqTick!=null&&S.tick-p.acqTick<=60; // no flipping a player within about a season's first two-thirds
 // every few days: move a player who asked out, or let a rebuilding team sell a veteran to a contender
 function aiTrades(){
@@ -3864,6 +3923,7 @@ function aiTrades(){
 function aiDoTrade(a,b,aP,bP,aK,bK,why){
   const nm=(ps,ks)=>[...ps.map(p=>p.name),...ks.map(k=>pickLabel(k)+' pick')].join(' and ')||'nothing';
   news(`Trade: the ${tname(a)} sent ${nm(aP,aK)} to the ${tname(b)} for ${nm(bP,bK)}.${why==='request'?` ${aP[0].name} had asked out.`:''}`);
+  tradeCap(a,b,aP,bP);
   aP.forEach(p=>{p.tid=b;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});bP.forEach(p=>{p.tid=a;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});
   aK.forEach(k=>k.owner=b);bK.forEach(k=>k.owner=a);
   T(a).lastTrade=T(b).lastTrade=S.tick;S.aiTrades=(S.aiTrades||0)+1;
@@ -5916,9 +5976,9 @@ function renderBusiness(){
    <p class="muted" style="font-size:.85rem">Offers come in the summer when a deal ends. What they're worth depends on market, fan hype and last season's record, so a deal signed after a big year locks in more money. Right now: local TV ~${money(dealValue(t,'tv'))}, jersey patch ~${money(dealValue(t,'patch'))}, naming rights ~${money(dealValue(t,'naming'))} a season.</p></div>`;
   const line=(l,v,cls='')=>`<tr><td class="l">${l}</td><td class="${cls}">${money(v)}</td></tr>`;
   const ledger=fin=>{const tt=finTotal(fin);return `<table><tbody>
-   ${line('Tickets',fin.rev.tickets)}${line('Local TV deal',fin.rev.media)}${line('National TV deal',fin.rev.national)}${line('National TV games',fin.rev.tv||0)}${line('In-Season Cup prizes',fin.rev.cup||0)}${line(fin.rev.sponsors==null?'Merchandise and sponsors':'Merchandise',fin.rev.merch)}${fin.rev.sponsors!=null?line('Sponsors',fin.rev.sponsors):''}${line('Revenue sharing',fin.rev.sharing||0,(fin.rev.sharing||0)<0?'bad':'')}${line('Playoff gates',fin.rev.playoffs)}${line('Luxury tax share',fin.rev.taxShare)}${fin.rev.events?line('Business events',fin.rev.events):''}
+   ${line('Tickets',fin.rev.tickets)}${line('Local TV deal',fin.rev.media)}${line('National TV deal',fin.rev.national)}${line('National TV games',fin.rev.tv||0)}${line('In-Season Cup prizes',fin.rev.cup||0)}${line(fin.rev.sponsors==null?'Merchandise and sponsors':'Merchandise',fin.rev.merch)}${fin.rev.sponsors!=null?line('Sponsors',fin.rev.sponsors):''}${line('Revenue sharing',fin.rev.sharing||0,(fin.rev.sharing||0)<0?'bad':'')}${line('Playoff gates',fin.rev.playoffs)}${line('Luxury tax share',fin.rev.taxShare)}${fin.rev.events?line('Business events',fin.rev.events):''}${fin.rev.cash?line('Cash from trades',fin.rev.cash):''}
    <tr class="total"><td class="l"><b>Revenue</b></td><td><b>${money(tt.rev)}</b></td></tr>
-   ${line('Player salaries',fin.exp.payroll)}${line('Luxury tax',fin.exp.tax,fin.exp.tax?'bad':'')}${line('Staff',fin.exp.staff)}${line('Team operations',fin.exp.ops||0)}${line('Arena operations',fin.exp.arena)}${line('Arena projects',fin.exp.projects)}${fin.exp.events?line('Promos and events',fin.exp.events):''}
+   ${line('Player salaries',fin.exp.payroll)}${line('Luxury tax',fin.exp.tax,fin.exp.tax?'bad':'')}${line('Staff',fin.exp.staff)}${line('Team operations',fin.exp.ops||0)}${line('Arena operations',fin.exp.arena)}${line('Arena projects',fin.exp.projects)}${fin.exp.events?line('Promos and events',fin.exp.events):''}${fin.exp.cash?line('Cash sent in trades',fin.exp.cash):''}
    <tr class="total"><td class="l"><b>Expenses</b></td><td><b>${money(tt.exp)}</b></td></tr>
    <tr class="total"><td class="l"><b>Profit</b></td><td class="${tt.profit>=0?'good':'bad'}"><b>${money(tt.profit)}</b></td></tr></tbody></table>`};
   const books=`<div class="panel"><h3>${S.season} books so far</h3><div class="scroll capgrid">${ledger(f)}</div>
@@ -6106,7 +6166,7 @@ function renderPlayerModal(){
     :`<div class="rbar"><span>${RLABEL[k]}</span><div class="meter"><i style="left:${x.lo}%;width:${x.hi-x.lo}%;opacity:.45"></i><u style="left:${x.v}%"></u></div><b class="num" style="font-size:.8rem">${x.lo}–${x.hi}</b></div>`};
   const unc=isUnc(p),vo=viewOvr(p),vp=viewPot(p);
   let contract='<span class="muted">No contract</span>';
-  if(p.contract){const c=p.contract;contract=`${money(c.amt)} ${c.r?'this season':'per year'} through ${c.exp}${c.r?` (${Math.round(c.r*100)}% raises, ${money(salAt(c,c.exp))} in the final year)`:''}${c.opt?`, ${optName(c.opt)} in ${c.exp}`:''}`}
+  if(p.contract){const c=p.contract;contract=`${money(c.amt)} ${c.r?'this season':'per year'} through ${c.exp}${c.r?` (${Math.round(c.r*100)}% raises, ${money(salAt(c,c.exp))} in the final year)`:''}${c.opt?`, ${optName(c.opt)} in ${c.exp}`:''}${c.ntc?', no-trade clause':''}${c.kick?`, ${Math.round(c.kick*100)}% trade kicker`:''}`}
   if(p.contract)contract+=(p.next?`<br><span class="good">Extension: ${money(p.next.amt)} per year through ${p.next.exp}</span>`:'');
   else if(p.tid===-1)contract=`Asking ${money(p.ask)} for ${p.askYrs} year${p.askYrs>1?'s':''}`+(p.rights===S.userTid?`<br><span class="good">You hold his ${p.rfa?'restricted free agent':birdOf(p).k} rights (cap hold ${money(holdOf(p))})</span>`:'')+(p.rfa&&p.rfa.tid!==S.userTid?`<br><span class="muted">Restricted free agent: the ${tname(p.rfa.tid)} can match any offer sheet.</span>`:'');
   if(p.tid>=-1){const sv=svcOf(p),own=p.tid>=0;contract+=`<br><span class="muted">${sv} year${sv===1?'':'s'} in the league · max ${money(maxFor(p,own))}${own&&superElig(p)?' (supermax eligible)':''}${own?` · ${birdOf(p).k} rights`:''} · minimum ${money(minFor(p))}</span>`;
@@ -6565,7 +6625,9 @@ function renderTradeBuild(){
   const keep=(set,ok)=>[...set].forEach(id=>{if(!ok(id))set.delete(id)});
   keep(UI.tm,id=>{const p=pById(id);return p&&p.tid===S.userTid});keep(UI.tt,id=>{const p=pById(id);return p&&p.tid===tid});
   keep(UI.pm,id=>{const k=pickById(id);return k&&k.owner===S.userTid});keep(UI.pt,id=>{const k=pickById(id);return k&&k.owner===tid});
-  const e=evalTrade(tid,[...UI.tm],[...UI.tt],[...UI.pm],[...UI.pt]);
+  const e=evalTrade(tid,[...UI.tm],[...UI.tt],[...UI.pm],[...UI.pt],null,UI.cash||0);
+  const myTpe=e.tpeUse.find(x=>x.tid===S.userTid),cOut=Math.min(cashLeft(S.userTid,'out'),cashLeft(tid,'in')),cIn=Math.min(cashLeft(tid,'out'),cashLeft(S.userTid,'in'));
+  const cashOpts=[...[7.9,7,6,5,4,3,2,1].filter(v=>v<=cIn+.001).map(v=>-v),0,...[1,2,3,4,5,6,7,7.9].filter(v=>v<=cOut+.001)];
   const modeTxt={contending:'Contending: values proven players now.',rebuilding:'Rebuilding: values youth, potential and cheap contracts. Discounts veterans.',middle:'In the middle: balances current ability and upside.'}[mode];
   let verdict='<span class="muted">Select players on both sides to build an offer.</span>';
   if(!e.empty){
@@ -6576,6 +6638,7 @@ function renderTradeBuild(){
       verdict+=c?`<br><span>They'd do it if you add <b>${esc(c.label)}</b>.</span> <button class="btn small" data-act="tradeAdd" data-arg="${c.key}">Add to offer</button>`
         :`<br><span class="muted">No single extra player or pick gets this done. Ask for less, or build a bigger package.</span>`;
     }
+    if(e.legal&&myTpe)verdict+=`<br><span class="muted">Uses ${money(myTpe.amt)} of your ${money(myTpe.left)} traded player exception, and hard-caps you at the ${money(APRON1)} first apron.</span>`;
     const fn=futNotes(tid,[...UI.pm,...UI.pt]);
     if(fn.length)verdict+=`<br><span class="muted">${fn.map(esc).join(' ')}</span>`;
   }
@@ -6583,10 +6646,10 @@ function renderTradeBuild(){
    ${open?'':`<p class="bad">Trades are closed right now. They're allowed in the regular season before the deadline (day ${deadlineDay()}), at the combine, on draft night and during free agency.</p>`}
    ${['combine','draft'].includes(S.phase)?`<p class="muted">Draft night: this year's picks are valued by their actual slot${(S.cls||{})[S.season]?` and the ${S.cls[S.season].q} class`:''}. A pick you acquire goes straight into the draft order.</p>`:''}
    <p>${chip(tid)} <b>${tname(tid)}</b> · <span class="pill">${mode}</span> <span class="muted">${modeTxt}</span><br><span class="muted" style="font-size:.85rem">${ownLine(tid)}</span></p>
-   <dl class="kv"><dt>You send</dt><dd>${money(e.out)}</dd><dt>You receive</dt><dd>${money(e.inn)}</dd><dt>Your payroll after</dt><dd class="${e.youAfter>TAX?'bad':e.youAfter>CAP?'warn':''}">${money(e.youAfter)}</dd><dt>${T(tid).abbr} payroll after</dt><dd>${money(e.themAfter)}</dd></dl>
+   <dl class="kv"><dt>You send</dt><dd>${money(e.out)}</dd><dt>You receive</dt><dd>${money(e.inn)}</dd><dt>Your payroll after</dt><dd class="${e.youAfter>TAX?'bad':e.youAfter>CAP?'warn':''}">${money(e.youAfter)}</dd><dt>${T(tid).abbr} payroll after</dt><dd>${money(e.themAfter)}</dd><dt><label for="tradeCash">Cash</label></dt><dd><select id="tradeCash">${cashOpts.map(v=>`<option value="${v}" ${v===(UI.cash||0)?'selected':''}>${v>0?`You send ${money(v)}`:v<0?`They send ${money(-v)}`:'None'}</option>`).join('')}</select></dd></dl>
    <p>${verdict}</p>
    <div class="row"><button class="btn primary" data-act="propose" ${open&&!e.empty?'':'disabled'}>Propose trade</button><button class="btn" data-act="tradeClear">Clear</button></div>
-   <p class="muted" style="font-size:.85rem">Teams over the cap after a trade can take back 200% of outgoing salary up to ${money(BAND1)}, outgoing plus ${money(BAND1)} up to ${money(BAND2)}, then 125%. Teams above the ${money(APRON1)} first apron can't take back more than they send; above the ${money(APRON2)} second apron they also can't combine players' salaries, and their furthest-out first is frozen. Hard-capped teams can't go over their hard cap. Free agents can't be traded until mid-December (three months if signed during the season), draft picks wait 30 days after signing, and players acquired in a trade can't be packaged with others for about two months. Rosters must stay between ${S.phase==='regular'?'13 and 15':'10 and 17'} players. No team can be left without a first-round pick in two straight future drafts. Rebuilding teams value picks most, and every team prices future firsts by its own read of those draft classes; injured players are discounted.</p></div>
+   <p class="muted" style="font-size:.85rem">Teams over the cap after a trade can take back 200% of outgoing salary up to ${money(BAND1)}, outgoing plus ${money(BAND1)} up to ${money(BAND2)}, then 125%. Teams above the ${money(APRON1)} first apron can't take back more than they send; above the ${money(APRON2)} second apron they also can't combine players' salaries, and their furthest-out first is frozen. Hard-capped teams can't go over their hard cap. Free agents can't be traded until mid-December (three months if signed during the season), draft picks wait 30 days after signing, and players acquired in a trade can't be packaged with others for about two months. Rosters must stay between ${S.phase==='regular'?'13 and 15':'10 and 17'} players. No team can be left without a first-round pick in two straight future drafts. Sending out more salary than you take back while over the cap creates a traded player exception for a year, which can later take in salary without sending any back. Each team can send and receive up to ${money(CASH_MAX)} in cash a season. A trade kicker raises a player's salary when he's traded. A no-trade clause lets a player block deals except to contenders. Rebuilding teams value picks most, and every team prices future firsts by its own read of those draft classes; injured players are discounted.</p></div>
   ${renderFinder()}
   <div class="grid2"><div class="panel"><h3>Your players</h3><p class="muted">Shop a player to see the best offer from every team.</p>${playerRows(roster(S.userTid),{sel:UI.tm,selAct:'tm',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findShop" data-arg="${p.pid}">Shop</button>`})}<h3>Your picks</h3>${pickList(S.userTid,UI.pm,'pm')}</div><div class="panel"><h3>${T(tid).abbr} players</h3><p class="muted">Find an offer to see the cheapest packages they'd accept.</p>${playerRows(roster(tid),{sel:UI.tt,selAct:'tt',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findFor" data-arg="${p.pid}">Find offer</button>`})}<h3>${T(tid).abbr} picks</h3>${pickList(tid,UI.pt,'pt')}</div></div>`;
 }
@@ -6951,7 +7014,7 @@ document.addEventListener('click',e=>{
     case 'closeSettings':UI.settings=false;break;
     case 'newCareer':
       if(Date.now()-confirmNew>4000){confirmNew=Date.now();el.textContent='Click again to erase this career';return}
-      newLeague();UI.tab='home';UI.settings=false;break;
+      newLeague();seedClauses();S.cl=1;UI.tab='home';UI.settings=false;break;
     default:return;
   }
   save();render();
@@ -6973,7 +7036,8 @@ document.addEventListener('dragend',()=>{if(UI.rotDrag==null)return;UI.rotDrag=n
 document.addEventListener('change',e=>{
   const el=e.target;
   if(UI.neg&&['negAmt','negYrs','negOpt'].includes(el.id)){negRead();const s=document.getElementById('negSum'),p=pById(UI.neg.pid);if(s&&p)s.innerHTML=negSummary(p,UI.neg);return}
-  if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();render();return}
+  if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();UI.cash=0;render();return}
+  if(el.id==='tradeCash'){UI.cash=Number(el.value)||0;render();return}
   if(el.dataset.tf){const f=tfState(),k=el.dataset.tf;f[k]=el.type==='checkbox'?el.checked:el.value.trim();f.n=TF_DEF.n;render();return}
   if(el.dataset.dp){setPlan(pById(Number(el.dataset.dp)),el.value);save();render();return}
   if(el.dataset.dpi){const p=pById(Number(el.dataset.dpi)),d=planOf(p);if(d)setPlan(p,d.k,el.value);save();render();return}
@@ -7007,6 +7071,7 @@ if(!S.staffPool){S.staffPool=[];S.nextStaffId=1;setupStaff()} // saves from befo
 if(!S.teams[0].biz)setupBusiness(); // saves from before finances
 S.teams.forEach(t=>{const b=t.biz;if(!b.loans)b.loans=[];if(!b.deals)seedDeals(t);if(b.fin.rev.sponsors==null)b.fin.rev.sponsors=0;if(b.loyal==null)seedFans(t)}); // saves from before sponsors
 if(!S.dealOffers)S.dealOffers={};
+if(!S.cl){seedClauses();S.cl=1} // saves from before trade kickers and no-trade clauses
 if(!S.chem)settleAll(); // saves from before chemistry: current rosters count as settled
 S.staffPool.concat(...S.teams.map(t=>ROLES.map(([r])=>t.staff[r]).filter(Boolean))).forEach(s=>{if(!s.trait)s.trait=pickTrait(s.role)}); // saves from before staff traits
 S.teams.forEach(t=>{if(t.voice==null)t.voice=startVoice(t.staff.hc);if(t.sfam==null)t.sfam=1});
