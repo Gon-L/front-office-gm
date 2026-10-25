@@ -62,6 +62,37 @@ select{border:1px solid var(--line);background:var(--surface);color:var(--ink);p
 .tabs .wrap{display:flex;gap:.15rem;overflow-x:auto}
 .tab{border:0;background:none;color:var(--muted);padding:.6rem .7rem;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
 .tab.on{color:var(--ink);border-bottom-color:var(--you-line)}
+/* the tab strip stays under the header while you scroll */
+nav.tabs{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--hdr0,0px));z-index:5}
+/* phones: bottom tab bar + More sheet instead of the strip */
+.botbar{display:none}
+.more-sheet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+.more-sheet .btn{text-align:left;padding:.7rem .8rem}
+.more-sheet .btn.on{border-color:var(--you-line);background:var(--you)}
+/* wide tables: a shadow on the side that has more columns */
+.scroll.more-r{box-shadow:inset -14px 0 12px -12px rgb(0 0 0 / .35)}
+.scroll.more-l{box-shadow:inset 14px 0 12px -12px rgb(0 0 0 / .35)}
+.scroll.more-l.more-r{box-shadow:inset -14px 0 12px -12px rgb(0 0 0 / .35),inset 14px 0 12px -12px rgb(0 0 0 / .35)}
+@media (max-width:640px){
+  .top .wrap{gap:.35rem .6rem;padding-block:.45rem}
+  .brand{flex:1 1 0;min-width:0}.brand>div{min-width:0}
+  .brand .tn{font-size:1.08rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand .sub{font-size:.66rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand .chip{font-size:.8rem;min-width:2.4em}
+  .score{gap:.55rem;flex:none}.score b{font-size:1.05rem}.score span{font-size:.58rem;letter-spacing:.06em}
+  .actions{flex-basis:100%;flex-wrap:nowrap;overflow-x:auto;margin-left:0;scrollbar-width:none;padding-bottom:1px}
+  .actions::-webkit-scrollbar{display:none}
+  .actions .btn{padding:.35rem .6rem;font-size:.86rem;flex:none}
+  .actions .btn.primary{order:-1}
+  .actions .set-btn{display:none}
+  .capbar{font-size:.72rem;gap:.45rem}.capbar .cap-lines{display:none}.meter{height:6px}
+  nav.tabs{display:none}
+  .botbar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;left:0;right:0;bottom:0;z-index:25;background:var(--surface);border-top:1px solid var(--line);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+  .botbar button{border:0;background:none;color:var(--muted);font:inherit;font-weight:600;font-size:.78rem;padding:.55rem .2rem .6rem;border-top:3px solid transparent;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .botbar button.on{color:var(--ink);border-top-color:var(--you-line)}
+  body{padding-bottom:calc(3.2rem + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:calc(3.7rem + env(safe-area-inset-bottom,0px))}
+}
 .main{padding-block:1.2rem 3rem;display:grid;gap:1.2rem}
 
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:1.2rem}
@@ -115,7 +146,7 @@ tr.sel td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
 .final{display:flex;align-items:center;gap:1rem;font-family:var(--display);font-size:1.6rem;font-weight:700}
 .news{margin:0;padding:0;list-style:none;display:grid;gap:.4rem;font-size:.9rem}
 .news li{display:flex;gap:.6rem}
-.news li span:first-child{color:var(--muted);min-width:3.2em;font-variant-numeric:tabular-nums}
+.news li span:first-child{color:var(--muted);min-width:4.4em;flex:none;font-variant-numeric:tabular-nums;font-size:.82rem;padding-top:.08rem}
 /* Home: news sits beside the main column on wide screens, right under the desk callout on narrow ones */
 .home,.home-top,.home-rest{display:grid;gap:1.2rem;min-width:0}
 .home-side .news{max-height:18rem;overflow-y:auto;padding-right:.3rem}
@@ -164,6 +195,9 @@ td.acts .btn,td.acts .pill{margin-block:.1rem}
 .pick{display:flex;gap:.7rem;align-items:center;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:.7rem;border-radius:8px;cursor:pointer}
 .pick:hover{border-color:var(--you-line)}
 .pick small{display:block;color:var(--muted)}
+.pick{align-items:flex-start}.pick>.chip{flex:none;margin-top:.1rem}
+.pick .diff-num{font-size:.8rem}
+@media (max-width:640px){.staff-tbl{min-width:62rem}.trade-bar .tb-sum .bad{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
 .pick .diff{display:flex;flex-wrap:wrap;gap:.1rem .7rem;margin-top:.25rem;color:var(--ink)}
 .pick .diff b{letter-spacing:.08em;font-weight:400}
 .pick>span{min-width:0}
@@ -250,6 +284,23 @@ tr.adv td:first-child{box-shadow:inset 3px 0 var(--good)}
 .alerts li.unread{background:var(--you);border-color:var(--you-line)}
 .alerts li .when{color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
 .alerts li .pill{margin-right:.35rem}
+.inbox-tabs{display:flex;flex-wrap:wrap;gap:.4rem}
+.inbox-needs{display:grid;gap:.9rem}
+details.how{font-size:.9rem}
+details.how>summary{cursor:pointer;color:var(--accent);font-weight:600;width:max-content;max-width:100%}
+details.how[open]>summary{margin-bottom:.35rem}
+details.how>p{margin:0;max-width:75ch}
+.trade-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:15;width:min(1100px,calc(100% - 32px));box-sizing:border-box;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--you-line);border-radius:10px;box-shadow:0 6px 24px rgb(0 0 0 / .18);padding:.55rem .8rem;display:flex;flex-wrap:wrap;gap:.4rem 1rem;align-items:center}
+.trade-bar .tb-sum{flex:1 1 16rem;min-width:0;font-size:.9rem}
+body.has-tbar .main{padding-bottom:6.5rem}
+.draft-tools{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.draft-tools input{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:.4rem .6rem;border-radius:6px;font:inherit;min-width:0;width:14rem;max-width:100%}
+@media (max-width:640px){.trade-bar{bottom:calc(3.6rem + env(safe-area-inset-bottom,0px));width:calc(100% - 16px)}}
+.dec-list{list-style:none;margin:0;padding:0;display:grid;gap:.3rem}
+.dec-list li{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
+.paused{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;justify-content:space-between}
+.opt-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.btn.offers-btn .badge.quiet{background:var(--sunk);color:var(--muted);border:1px solid var(--line)}
 @media (max-width:560px){.alerts li{grid-template-columns:1fr auto}.alerts li .when{grid-column:1/-1}}
 /* History tables that grow every season scroll inside their card, header row pinned */
 .scroll.tall{max-height:24rem;overflow-y:auto}
@@ -260,6 +311,9 @@ tr.adv td:first-child{box-shadow:inset 3px 0 var(--good)}
 .fbar .w{background:var(--warn)}.fbar .n{background:var(--line)}.fbar .d{background:var(--good)}
 .scroll.tall thead th{position:sticky;top:0;background:var(--surface);z-index:1}
 @media (prefers-reduced-motion:no-preference){.toast{animation:up .2s ease-out}@keyframes up{from{opacity:0;transform:translate(-50%,8px)}}}
+/* wide screens: toasts sit in the bottom-right corner, away from the tables */
+@media (min-width:900px){.toast{left:auto;right:max(16px,env(safe-area-inset-right,0px));transform:none;max-width:min(44vw,480px)}
+  @media (prefers-reduced-motion:no-preference){.toast{animation:upr .2s ease-out}@keyframes upr{from{opacity:0;transform:translateY(8px)}}}}
 /* business dashboard: series colors (validated categorical slots 1-5), tiles, charts, tooltip */
 :root{--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181}}
@@ -399,7 +453,22 @@ function wpick(items,wf){let tot=0;const ws=items.map(i=>{const w=Math.max(0,wf(
 let S=null;
 let LIVE=null; // a game you watched, waiting for the day sim to book it
 const UI={tab:'home',tradeTid:null,tm:new Set(),tt:new Set(),pm:new Set(),pt:new Set(),player:null,finder:null,statView:'leaders',statMine:false,ss:'ppg',sd:1,renounce:new Set(),planAdds:[],sort:'ovr',sortDir:-1,lb:'pts',rview:'ratings',rpos:[],cmp:[],cmpOpen:false,faPos:[],faSkill:''};
-function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(S))}catch(e){}}
+function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(S));if(save.err){save.err=0;toast('Saving works again.')}save.at=Date.now()}
+  catch(e){if(!save.err)setTimeout(()=>toast("This browser couldn't save your career (storage is full or blocked). Export it from Settings to keep it safe."),0);save.err=1}}
+// a career as a file: Export downloads it, Import replaces the current one and reloads
+function exportSave(){
+  const t=S.userTid!=null?T(S.userTid).abbr:'league',blob=new Blob([JSON.stringify(S)],{type:'application/json'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=`front-office-gm-${t}-${S.season}.json`;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
+}
+function importSave(file){
+  const r=new FileReader();
+  r.onload=()=>{let s;try{s=JSON.parse(r.result)}catch(e){toast("That file isn't a Front Office GM save.");return}
+    if(!s||!Array.isArray(s.teams)||!Array.isArray(s.players)||s.season==null){toast("That file isn't a Front Office GM save.");return}
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(s))}catch(e){toast("This browser couldn't store the imported career.");return}
+    location.reload()};
+  r.readAsText(file);
+}
 function load(){try{const s=localStorage.getItem(SAVE_KEY);if(s)return JSON.parse(s)}catch(e){}return null}
 
 const T=tid=>S.teams[tid];
@@ -454,7 +523,8 @@ function mineTxt(txt){
 // batch holds what this sim produced until the next render shows it
 const NOTE={depth:0,batch:[]},NOTES_KEEP=120;
 // force: league news worth an alert even though it isn't about your team
-function news(txt,force){const n={s:S.season,txt};if(mineTxt(txt))n.m=1;S.news.unshift(n);S.news=S.news.filter(x=>x.s>=S.season-1).slice(0,NEWS_KEEP);if(NOTE.depth&&(n.m||force))noteNews(txt)}
+const newsWhen=()=>!S||S.phase==null?'':S.phase==='regular'?`Day ${Math.min(S.day+1,S.sched.length)}`:S.phase==='freeagency'?`FA day ${S.faDay||1}`:({playoffs:'Playoffs',lottery:'Lottery',combine:'Combine',draft:'Draft',resign:'Re-sign'})[S.phase]||'';
+function news(txt,force){const n={s:S.season,d:newsWhen(),txt};if(mineTxt(txt))n.m=1;S.news.unshift(n);S.news=S.news.filter(x=>x.s>=S.season-1).slice(0,NEWS_KEEP);if(NOTE.depth&&(n.m||force))noteNews(txt)}
 
 function calcOvr(r){return Math.round(r.ins*.19+r.thr*.19+r.pas*.15+r.reb*.14+r.def*.17+r.ath*.16)}
 // no two active players or staff share a generated name
@@ -3077,7 +3147,10 @@ function finishPlayoffs(champ){
     if(rnd()<pr){if(p.tid>=0)retired.push(p);considerHof(p);return false}
     return true;
   });
-  retired.filter(p=>p.tid===S.userTid||p.ovr>=58).slice(0,5).forEach(p=>news(`${p.name} (${T(p.tid).abbr}) retired at age ${p.age}.`));
+  retired.filter(p=>p.tid===S.userTid||p.ovr>=58).slice(0,5).forEach(p=>{
+    const hof=`${p.name} retired and is headed to the Hall of Fame.`,inHof=S.news.some(n=>n.txt===hof);
+    if(inHof)S.news=S.news.filter(n=>n.txt!==hof);
+    news(`${p.name} (${T(p.tid).abbr}) retired at age ${p.age}${inHof?' and is headed to the Hall of Fame':''}.`)});
   wrapRetired(retired);
   // players that retired with contracts leave no cap hit
   makeDraftOrder();
@@ -5393,18 +5466,20 @@ function diffWhy(tid,o,ctx){
   if(pay>limitFor(tid))w.push(['Payroll over the owner\'s limit',false,.9]);else if(pay>TAX)w.push(['Payroll over the tax',false,.5]);
   return w.sort((a,b)=>b[2]-a[2]).slice(0,3);
 }
+const byCity=(a,b)=>`${a.city} ${a.nick}`.localeCompare(`${b.city} ${b.nick}`);
 function renderPicker(){
   const rk=ovrRanks(),ctx={rk,avg:S.teams.reduce((s,t)=>s+teamOvr(t.tid),0)/30},fresh=S.season===2027&&S.phase==='regular'&&S.day===0;
   const D=fresh?Object.fromEntries(S.teams.map(t=>[t.tid,diffOf(t.tid,ctx)])):{};
   const diffTxt=d=>!d?'':`<small class="diff" title="Simulated GMs were fired within 3 seasons ${Math.round(d.fire*100)}% of the time with an owner like this. Their teams averaged ${d.wins} wins in seasons 3-5 and reached the conference finals in ${d.deep}% of careers."><span>Job pressure <b aria-hidden="true">${diffDots(d.job)}</b> ${DIFF_JOB[d.job-1]}</span><span>Building a winner <b aria-hidden="true">${diffDots(d.build)}</b> ${DIFF_BUILD[d.build-1]}</span></small>
+    <small class="diff-num">Sim GMs: fired within 3 seasons ${Math.round(d.fire*100)}% · ${d.wins} wins a season in years 3-5 · conference finals ${d.deep}%</small>
     <small class="diff-why">${d.why.map(([x,g])=>`<span class="${g?'good':'bad'}">${g?'▲':'▼'} ${esc(x)}</span>`).join('')}</small>`;
   const card=t=>`<button class="pick" data-act="pickTeam" data-arg="${t.tid}">${chip(t.tid)}<span><b>${t.city} ${t.nick}</b><small>Team rating ${teamOvr(t.tid)} (#${rk[t.tid]}) · payroll ${money(payroll(t.tid))}</small><small>${ownLine(t.tid)}</small>${diffTxt(D[t.tid])}</span></button>`;
   const by=UI.pickSort||'conf',key=t=>{const d=D[t.tid];return d?d.job+d.build+d.fire:0};
   const sortBar=fresh?`<div class="pick-sort"><span class="muted">Sort:</span>${[['conf','By conference'],['easy','Easiest first'],['hard','Hardest first']].map(([k,l])=>`<button class="btn small${by===k?' primary':''}" data-act="pickSort" data-arg="${k}" aria-pressed="${by===k}">${l}</button>`).join('')}</div>`:'';
-  const lists=by==='conf'||!fresh?`<div class="grid2"><div class="panel"><h3>Eastern Conference</h3><div class="picker">${S.teams.filter(t=>t.conf==='E').map(card).join('')}</div></div>
-  <div class="panel"><h3>Western Conference</h3><div class="picker">${S.teams.filter(t=>t.conf==='W').map(card).join('')}</div></div></div>`
+  const lists=by==='conf'||!fresh?`<div class="grid2"><div class="panel"><h3>Eastern Conference</h3><div class="picker">${S.teams.filter(t=>t.conf==='E').sort(byCity).map(card).join('')}</div></div>
+  <div class="panel"><h3>Western Conference</h3><div class="picker">${S.teams.filter(t=>t.conf==='W').sort(byCity).map(card).join('')}</div></div></div>`
     :`<div class="panel"><h3>${by==='easy'?'Easiest to hardest':'Hardest to easiest'}</h3><div class="picker">${S.teams.slice().sort((a,b)=>(key(a)-key(b))*(by==='easy'?1:-1)).map(card).join('')}</div></div>`;
-  return `<div class="wrap"><div class="hero"><span class="muted" style="text-transform:uppercase;letter-spacing:.12em;font-size:.8rem">${S.season-1}-${String(S.season).slice(2)} season · 30 teams · real rosters</span><h1>Pick the franchise you'll run</h1><p class="muted">Build a roster under a ${money(CAP)} salary cap and a ${money(TAX)} luxury tax line. Make trades, run the draft, and survive free agency. Low-rated teams are rebuilds; high-rated ones are built to win now.</p>${fresh?`<p class="muted" style="font-size:.85rem"><b>Difficulty</b> comes from 1,200 simulated careers, 40 per team, run by a hands-off auto-GM that never trades. <b>Job pressure</b> is how often it got fired within three seasons, adjusted for this league's owner and their traits. <b>Building a winner</b> is how good the team was by seasons 3 to 5. A real GM does better than the sim, so read them as a comparison between teams. Hover a team for the numbers.</p>`:''}<p class="muted" style="font-size:.85rem">Unofficial fan-made sim, not affiliated with the NBA or its teams. Rosters and contracts reflect the 2026-27 season as of October 2026 (source: Basketball-Reference); two-way players are left out. Ratings are opinions. Draft prospects from the first draft on are fictional.</p></div>
+  return `<div class="wrap"><div class="hero"><span class="muted" style="text-transform:uppercase;letter-spacing:.12em;font-size:.8rem">${S.season-1}-${String(S.season).slice(2)} season · 30 teams · real rosters</span><h1>Pick the franchise you'll run</h1><p class="muted">Build a roster under a ${money(CAP)} salary cap and a ${money(TAX)} luxury tax line. Make trades, run the draft, and survive free agency. Low-rated teams are rebuilds; high-rated ones are built to win now.</p>${fresh?`<p class="muted" style="font-size:.85rem"><b>Difficulty</b> comes from 1,200 simulated careers, 40 per team, run by a hands-off auto-GM that never trades. <b>Job pressure</b> is how often it got fired within three seasons, adjusted for this league's owner and their traits. <b>Building a winner</b> is how good the team was by seasons 3 to 5. A real GM does better than the sim, so read them as a comparison between teams.</p>`:''}<p class="muted" style="font-size:.85rem">Unofficial fan-made sim, not affiliated with the NBA or its teams. Rosters and contracts reflect the 2026-27 season as of October 2026 (source: Basketball-Reference); two-way players are left out. Ratings are opinions. Draft prospects from the first draft on are fictional.</p></div>
   ${sortBar}${lists}</div>`;
 }
 function phaseActions(){
@@ -5416,21 +5491,23 @@ function phaseActions(){
     case 'combine':return `<button class="btn" data-act="tab" data-arg="draft">Combine</button>`+b('startDraft','Start the draft',true);
     case 'draft':return S.draft.order[S.draft.idx]===S.userTid?`<button class="btn primary" data-act="tab" data-arg="draft">You're on the clock</button>`+b('autopick','Auto-pick'):b('draftAll','Finish draft',true);
     case 'resign':return b('toFA','Open free agency',true);
-    case 'freeagency':return b('faday','Sim FA day')+b('startSeason',`Start ${S.season} season`,true);
+    case 'freeagency':return b('faday','Sim FA day')+b('startSeason',`Start the ${seasonTxt(S.season)} season`,true);
   }
   return '';
 }
+// a season by its two calendar years, the way the league writes it: 2027 -> "2026-27"
+const seasonTxt=y=>`${y-1}-${String(y).slice(2)}`;
 function renderHeader(){
   const t=T(S.userTid),pr=payroll(S.userTid),w=Math.min(100,pr/(TAX*1.25)*100);
   const cls=pr>TAX?'tax':pr>CAP?'over':'';
   const phase=S.phase==='regular'?`Day ${S.day+1} of ${S.sched.length}`:phaseLabel();
   return `<header class="top"><div class="wrap">
-   <div class="brand">${chip(t.tid)}<div><div class="tn">${t.city} ${t.nick}</div><div class="sub">${S.season} · ${phase}</div></div></div>
+   <div class="brand">${chip(t.tid)}<div><div class="tn">${t.city} ${t.nick}</div><div class="sub">${seasonTxt(S.season)} · ${phase}</div></div></div>
    <div class="score num"><div><b>${t.w}-${t.l}</b><span>Record</span></div><div><b>${teamOvr(t.tid)}</b><span>Rating</span></div><div><b>${roster(t.tid).length}</b><span>Roster</span></div>${S.owner?`<div><b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':''}">${S.owner.security}</b><span>Job</span></div>`:''}</div>
-   <div class="actions">${alertsBtn()}${ownBtn()}${bizBtn()}${storyBtn()}${pressBtn()}${offersBtn()}${phaseActions()}${settingsBtn()}</div>
+   <div class="actions">${inboxBtn()}${phaseActions()}${settingsBtn()}</div>
    <div class="capbar"><span class="num">Payroll <b class="${pr>TAX?'bad':pr>CAP?'warn':''}">${money(pr)}</b></span>
      <div class="meter" aria-hidden="true"><i class="${cls}" style="width:${w}%"></i>${[CAP,TAX,APRON1,APRON2].map(x=>`<u style="left:${x/(TAX*1.25)*100}%"></u>`).join('')}</div>
-     <span class="num">Cap ${money(CAP)} · Tax ${money(TAX)} · Aprons ${money(APRON1)} / ${money(APRON2)}</span></div>
+     <span class="num cap-lines">Cap ${money(CAP)} · Tax ${money(TAX)} · Aprons ${money(APRON1)} / ${money(APRON2)}</span></div>
   </div></header>`;
 }
 function offersBtn(){
@@ -5515,10 +5592,40 @@ function noteLive(n){
 }
 const NOTE_BTN={offersShow:'View offer',pressShow:'Answer',bizShow:'Decide',lrShow:'View',ownShow:'Reply',player:'Player',tab:'Open'};
 const noteBtn=(n,cls='')=>noteLive(n)?`<button class="btn${cls}" data-act="${n.act}"${n.arg!=null?` data-arg="${esc(String(n.arg))}"`:''}>${NOTE_BTN[n.act]}</button>`:'';
+// every open decision, oldest kind first; each opens in the inbox
+function decList(){
+  if(S.userTid==null)return [];
+  const r=[],m=S.owner&&S.owner.msg,os=liveOffers();
+  if(m)r.push(['Owner',m.title]);
+  if(S.lr)r.push(['Locker room',S.lr.title]);
+  if(S.bizEv)r.push(['Business',S.bizEv.title]);
+  if(S.presser)r.push(['Press',S.presser.title]);
+  if(os.length)r.push(['Trades',`${os.length} offer${os.length>1?'s':''}, latest from the ${tname(os[os.length-1].tid)}`]);
+  return r;
+}
+const decSig=()=>{const s=noteState();return [s.o.join(','),s.p,s.b,s.l,s.w].join('|')};
+function inboxBtn(){
+  if(S.userTid==null)return '';
+  const n=decList().length,news=noteUnread(),fresh=n&&decSig()!==UI.decSeen;
+  return `<button class="btn offers-btn${fresh?' new':''}" data-act="alertsShow" title="${n?`${n} decision${n>1?'s':''} waiting on you`:'News about your team'}">Inbox${n?` <span class="badge">${n}</span>`:news?` <span class="badge quiet">${news>99?'99+':news}</span>`:''}</button>`;
+}
+function openInbox(tab){
+  UI.alertsFrom=S.noteRead||0;S.noteRead=S.noteId||0;UI.alerts=true;UI.inboxTab=tab||(decList().length?'needs':'news');
+  UI.offers=false;UI.pressShow=false;UI.bizShow=false;UI.ownShow=false;UI.player=null;UI.game=null;UI.more=false;
+  document.getElementById('toast').hidden=true;
+}
+// Home and the Business tab point at the inbox instead of repeating the cards
+function decStrip(){
+  const d=decList();if(!d.length)return '';
+  return `<div class="panel callout dec-strip"><div class="spread"><h3>${d.length} decision${d.length>1?'s':''} waiting</h3><button class="btn primary" data-act="alertsShow" data-arg="needs">Open inbox</button></div>
+   <ul class="dec-list">${d.map(([k,t])=>`<li><span class="pill">${k}</span><span>${esc(t)}</span></li>`).join('')}</ul></div>`;
+}
 const noteNeeds=n=>['offersShow','pressShow','bizShow','lrShow','ownShow'].includes(n.act); // waiting on a decision from you
 // after a sim: up to three things that happened, open decisions first, newest first, and a way into the full list
 function noteToast(b){
   if(UI.alerts)return;
+  const lv=(S.opts&&S.opts.popups)||'all';if(lv==='off')return;
+  if(lv==='needs'){b=b.filter(n=>noteNeeds(n)||n.tag==='Injury');if(!b.length)return}
   const r=[...b].reverse(),open=n=>noteNeeds(n)&&noteLive(n),top=[...r.filter(open),...r.filter(n=>!open(n))].slice(0,3),t=document.getElementById('toast');
   t.className='toast notes';
   t.innerHTML=`<div class="nrow"><span class="nhead">${b.length===1?'While you were away':`${b.length} updates for your team`}</span><button class="btn" data-act="toastX" aria-label="Dismiss">✕</button></div>`
@@ -5529,10 +5636,16 @@ function noteToast(b){
 const noteUnread=()=>(S.notes||[]).filter(n=>n.id>(S.noteRead||0)).length;
 // ---------- settings (v52) ----------
 // one place for game-wide options; add new sections to renderSettingsModal
-function settingsBtn(){return `<button class="btn" data-act="settingsShow" title="Settings" aria-label="Settings">&#9881;&#xFE0E; Settings</button>`}
+function settingsBtn(){return `<button class="btn set-btn" data-act="settingsShow" title="Settings" aria-label="Settings">&#9881;&#xFE0E; Settings</button>`}
 function renderSettingsModal(){
   return `<div class="modal-bg" data-act="closeSettings"><div class="modal" role="dialog" aria-modal="true" aria-label="Settings" data-act="modal">
    <div class="spread"><h2>Settings</h2><button class="btn" data-act="closeSettings" aria-label="Close">Close</button></div>
+   <div><h3>Simming</h3>
+    <label class="row" style="gap:.5rem"><input type="checkbox" class="check" data-act="optPause" ${S.opts&&S.opts.pauseDec===false?'':'checked'}> Pause a long sim when your owner, the press, the business side or the locker room needs an answer, or a rotation player is hurt for 5+ games</label>
+    <div class="opt-row" style="margin-top:.5rem"><span>Pop-up after each sim:</span>${[['all','Everything'],['needs','Decisions and injuries'],['off','Off']].map(([k,l])=>`<button class="btn small${((S.opts&&S.opts.popups)||'all')===k?' primary':''}" data-act="optPopups" data-arg="${k}">${l}</button>`).join('')}</div>
+    <p class="muted" style="font-size:.85rem">Everything still lands in the inbox.</p></div>
+   <div><h3>Your save</h3><div class="row"><button class="btn" data-act="exportSave">Export career</button><label class="btn" for="importSave">Import career</label><input type="file" id="importSave" accept=".json,application/json" hidden></div>
+    <p class="muted" style="font-size:.85rem">${save.err?'<b class="bad">Saving is failing in this browser.</b> Export your career to keep it.':`Saved automatically in this browser${save.at?` (last at ${new Date(save.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})})`:''}.`} Export makes a file you can import on another device. Importing replaces the career here.</p></div>
    <div><h3>Career</h3><div class="row"><button class="btn" data-act="newCareer" id="newCareerBtn">Start a new career</button><span class="muted">Your progress saves in this browser. Starting over erases it.</span></div></div>
   </div></div>`;
 }
@@ -5542,11 +5655,17 @@ function alertsBtn(){
   return `<button class="btn offers-btn${n?' new':''}" data-act="alertsShow" title="${n?`${n} new alert${n>1?'s':''}`:'Everything that happened to your team'}">Alerts${n?` <span class="badge">${n>99?'99+':n}</span>`:''}</button>`;
 }
 function renderAlertsModal(){
-  const ns=S.notes||[],from=UI.alertsFrom||0;
-  return `<div class="modal-bg" data-act="closeAlerts"><div class="modal wide" role="dialog" aria-modal="true" aria-label="Alerts" data-act="modal">
-    <div class="spread"><h2>Alerts</h2><button class="btn" data-act="closeAlerts" aria-label="Close">Close</button></div>
-    <p class="muted" style="font-size:.85rem">Everything that happened to your team while you simmed, newest first. Decisions you still owe have a button.</p>
-    ${ns.length?`<ul class="alerts">${ns.map(n=>`<li class="${n.id>from?'unread':''}"><span class="when">${n.s!==S.season?n.s+' · ':''}${esc(n.d)}</span><span>${n.tag?`<span class="pill">${esc(n.tag)}</span>`:''}${esc(n.txt)}</span><span>${noteBtn(n,' small')}</span></li>`).join('')}</ul>`:'<p class="muted">Nothing yet. Sim a day or a week and anything that happens to your team shows up here.</p>'}</div></div>`;
+  const d=decList(),tab=UI.inboxTab==='news'||!d.length&&UI.inboxTab!=='needs'?'news':'needs',tg=UI.newsTag||'';
+  if(tab==='needs')UI.decSeen=decSig();
+  const all=(S.notes||[]).filter(n=>!noteNeeds(n)),tags=[...new Set(all.map(n=>n.tag).filter(Boolean))],ns=all.filter(n=>!tg||n.tag===tg),from=UI.alertsFrom||0,unread=all.filter(n=>n.id>from).length;
+  const tb=(k,l)=>`<button class="btn small${tab===k?' primary':''}" data-act="inboxTab" data-arg="${k}">${l}</button>`;
+  return `<div class="modal-bg" data-act="closeAlerts"><div class="modal wide" role="dialog" aria-modal="true" aria-label="Inbox" data-act="modal">
+    <div class="spread"><h2>Inbox</h2><button class="btn" data-act="closeAlerts" aria-label="Close">Close</button></div>
+    <div class="inbox-tabs">${tb('needs',`Needs you${d.length?` (${d.length})`:''}`)}${tb('news',`News${unread?` (${unread} new)`:''}`)}</div>
+    ${tab==='needs'?(d.length?`<div class="inbox-needs">${renderOwnMsg()}${renderStory()}${renderBizEv()}${renderPress()}${renderOffers()}</div>`:'<p class="muted">Nothing needs you right now. New owner messages, press questions, business decisions, locker room stories and trade offers show up here.</p>')
+    :`<p class="muted" style="font-size:.85rem">Everything that happened to your team while you simmed, newest first.</p>
+    ${tags.length>1?`<div class="row">${[['','All'],...tags.map(x=>[x,x])].map(([k,l])=>`<button class="btn small${tg===k?' primary':''}" data-act="newsTag" data-arg="${esc(k)}">${esc(l)}</button>`).join('')}</div>`:''}
+    ${ns.length?`<ul class="alerts">${ns.slice(0,150).map(n=>`<li class="${n.id>from?'unread':''}"><span class="when">${n.s!==S.season?n.s+' · ':''}${esc(n.d)}</span><span>${n.tag?`<span class="pill">${esc(n.tag)}</span>`:''}${esc(n.txt)}</span><span>${noteBtn(n,' small')}</span></li>`).join('')}</ul>`:'<p class="muted">Nothing yet. Sim a day or a week and anything that happens to your team shows up here.</p>'}`}</div></div>`;
 }
 // business decisions get a header button and a pop-up, like the press
 function bizBtn(){
@@ -5566,6 +5685,17 @@ function noteSync(){
   if(S.lr)UI.lrSeen=S.lr.id;
 }
 const TABS=[['home','Home'],['roster','Roster'],['cap','Cap'],['staff','Staff'],['business','Business'],['standings','Standings'],['games','Games'],['stats','Stats'],['trade','Trade'],['fa','Free agents'],['draft','Draft'],['playoffs','Playoffs'],['history','History']];
+// phones: four tabs and More along the bottom; the fourth follows the phase
+function phaseTab(){return {playoffs:'playoffs',lottery:'draft',combine:'draft',draft:'draft',resign:'fa',freeagency:'fa'}[S.phase]||'standings'}
+function renderBotbar(){
+  const ks=['home','roster','trade',phaseTab()],lab=Object.fromEntries(TABS);
+  return `<nav class="botbar" aria-label="Tabs">${ks.map(k=>`<button class="${UI.tab===k&&!UI.more?'on':''}" data-act="tab" data-arg="${k}"${UI.tab===k?' aria-current="page"':''}>${lab[k]}</button>`).join('')}<button class="${UI.more||!ks.includes(UI.tab)?'on':''}" data-act="moreShow" aria-haspopup="dialog">More</button></nav>`;
+}
+function renderMoreModal(){
+  return `<div class="modal-bg" data-act="closeMore"><div class="modal" role="dialog" aria-modal="true" aria-label="All tabs" data-act="modal">
+    <div class="spread"><h2>Go to</h2><button class="btn" data-act="closeMore" aria-label="Close">Close</button></div>
+    <div class="more-sheet">${TABS.map(([k,l])=>`<button class="btn${UI.tab===k?' on':''}" data-act="tab" data-arg="${k}">${l}</button>`).join('')}<button class="btn" data-act="settingsShow">Settings</button></div></div></div>`;
+}
 function renderNav(){return `<nav class="tabs"><div class="wrap">${TABS.map(([k,l])=>`<button class="tab${UI.tab===k?' on':''}" data-act="tab" data-arg="${k}">${l}</button>`).join('')}</div></nav>`}
 
 function guidance(){
@@ -5583,7 +5713,7 @@ function guidance(){
     case 'draft':return `<h3>Draft day</h3><p>${S.draft.order[S.draft.idx]===u?`You're on the clock with pick ${S.draft.idx+1}. Open the Draft tab to choose. Potential is a scouting estimate, not a promise.`:'Your picks are done.'}</p>`;
     case 'resign':{
       const ex=expiring(u);
-      return `<h3>Expiring contracts</h3><p class="muted">Bird rights let you re-sign your own players over the cap: Full Bird (3+ seasons with you) up to the max, Early Bird (2 seasons) up to 175% of his salary or 105% of the league average, Non-Bird up to 120%. Above that limit you need cap space next season. Trades keep a player's Bird rights. Players you don't decide on become free agents, but you keep their Bird rights: a cap hold counts against your cap until you re-sign them in free agency or renounce them, and other teams can sign them first. Let go renounces him now. Players finishing a rookie-scale deal get a qualifying offer instead: they become restricted free agents, so you can match any offer sheet another team gives them, and an unsigned one plays a year on the qualifying offer. Next season's commitments: <b class="num">${money(nextYearPayroll(u))}</b>.</p>
+      return `<h3>Expiring contracts</h3><details class="how"><summary>How re-signing works</summary><p class="muted">Bird rights let you re-sign your own players over the cap: Full Bird (3+ seasons with you) up to the max, Early Bird (2 seasons) up to 175% of his salary or 105% of the league average, Non-Bird up to 120%. Above that limit you need cap space next season. Trades keep a player's Bird rights. Players you don't decide on become free agents, but you keep their Bird rights: a cap hold counts against your cap until you re-sign them in free agency or renounce them, and other teams can sign them first. Let go renounces him now. Players finishing a rookie-scale deal get a qualifying offer instead: they become restricted free agents, so you can match any offer sheet another team gives them, and an unsigned one plays a year on the qualifying offer. Next season's commitments: <b class="num">${money(nextYearPayroll(u))}</b>.</p></details>
       ${ex.length?`<div class="scroll"><table><thead><tr><th class="l">Player</th><th>Age</th><th>Ovr</th><th>Pot</th><th>Asking</th><th>Yrs</th><th class="l">Rights</th><th></th></tr></thead><tbody>${ex.map(p=>`<tr><td class="l">${esc(p.name)} <span class="muted">${p.pos}</span></td><td>${p.age}</td><td class="ovr">${p.ovr}</td><td>${scoutPot(p)}</td><td>${money(p.ask)}</td><td>${p.askYrs}</td><td class="l">${(b=>`<span title="${b.yrs} season${b.yrs===1?'':'s'} with your team">${b.k}</span>${b.k==='Full Bird'?'':` <span class="muted">up to ${money(b.lim)}</span>`}${p.ask>b.lim+.001?' <span class="pill warn" title="Re-signing him at this price needs cap space next season">Over his limit</span>':''}`)(birdOf(p))}</td><td class="l">${p.resign==='yes'?'<span class="pill good">Re-signing</span> ':''}${p.resign==='no'?'<span class="pill muted">Letting go</span> ':''}${p.resign==null&&!p.refuse?(p.contract.rk?`<span class="pill" title="Restricted free agent: you can match any offer sheet; unsigned, he takes the qualifying offer">Qualifying offer ${money(qoOf(p))}</span> `:'<span class="pill" title="He becomes a free agent, but you keep his Bird rights and a cap hold">Keep rights</span> '):''}${p.refuse?`<span class="pill bad" title="Morale ${moodOf(p)}">Won't re-sign</span> `:`<button class="btn small" data-act="resign" data-arg="${p.pid}">Re-sign</button> <button class="btn small" data-act="neg" data-arg="${p.pid}">Negotiate</button>`} <button class="btn small" data-act="letgo" data-arg="${p.pid}">Let go</button></td></tr>`).join('')}</tbody></table></div>`:'<p>No contracts are expiring this summer.</p>'}${teamOptsHtml(u)}`;}
     case 'freeagency':return `<h3>Free agency, day ${S.faDay}</h3><p>Asking prices drop about 5% a day. For the first two weeks, proven players hold out for a real contract (players rated 60+ want at least the mid-level or about 40% of their value). After that they take the best offer out there, often a short "prove it" deal, and rival teams get the first look at it. Rival teams sign players every day, will waive a minimum-salary player to make room for someone good, and keep shopping for 14 days even if you start the season early. Under the cap you can sign anyone who fits; over it, you have one mid-level exception (${money(MLE)}, or ${money(MLE_TP)} above the first apron, or ${money(MLE_ROOM)} once you have used cap space; it can be split), a ${money(BAE)} bi-annual every other season, and minimum deals. The Cap tab shows what is left. Players you sign can't be traded until mid-December. Your own free agents are at the top: you can re-sign them over the cap with Bird rights, but their cap holds count until you do or renounce them. Deals above the mid-level come with yearly raises, and some have a player or team option in the final year. Restricted free agents (RFA) come off rookie deals: an offer sheet you sign can be matched by their team, and your own get offer sheets you can match. Negotiate to offer your own salary, years and option: a winning record and a loyal player get you a discount, and lowballing him twice ends the talks for the day. You need 13 to 15 players to start the season (you have ${roster(u).length}).</p>`;
   }
@@ -5603,15 +5733,15 @@ function renderHome(){
   const sad=roster(u).filter(p=>moodOf(p)<45).sort((a,b)=>moodOf(a)-moodOf(b));
   const moodTxt=sad.length?`<p><b class="warn">Unhappy:</b> ${sad.map(p=>`${plink(p.pid,p.name)}${p.tradeReq?' <span class="pill bad">wants out</span>':''}`).join(', ')} <span class="muted">· open a player to see why</span></p>`:'';
   const injTxt=inj.length?`<p><b class="bad">Injured:</b> ${inj.map(p=>`${esc(p.name)} <span class="muted">(${injLc(p.inj.type)}, out ${p.inj.g} game${p.inj.g>1?'s':''})</span>`).join(', ')}</p>`:'';
-  const own=S.owner?`<p>${esc(ownName())} (${OWNER_TYPES[S.owner.type].toLowerCase()}) is <b class="${ownMood()[1]}">${ownMood()[0].toLowerCase()}</b> · job security <b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':'good'}">${S.owner.security}</b> · trust <b class="${trustCls(trustOf())}">${trustOf()}</b>${S.owner.dm?` · you agreed: ${esc(lc1(dmText(S.owner.dm)))}`:''}${S.owner.ult&&S.owner.ult.s===S.season?` · <span class="pill bad">Ultimatum: ${esc(lc1(ultText(S.owner.ult)))}</span>`:S.owner.security<25&&S.phase==='regular'?' · <span class="pill bad">Hot seat</span>':''}${lameDuck()?' · <span class="pill warn">Lame duck</span>':''} · goals: ${S.owner.goals.map(gl=>`${goalText(gl)} ${goalPace(gl)?'<span class="good">✓</span>':'<span class="muted">…</span>'}`).join(', ')} <button class="btn small" data-act="tab" data-arg="business">Business</button></p>`:'';
+  const own=S.owner?`<p>${esc(ownName())} (${OWNER_TYPES[S.owner.type].toLowerCase()}) is <b class="${ownMood()[1]}">${ownMood()[0].toLowerCase()}</b> · job security <b class="${S.owner.security<30?'bad':S.owner.security<60?'warn':'good'}">${S.owner.security}</b> · trust <b class="${trustCls(trustOf())}">${trustOf()}</b>${S.owner.dm?` · you agreed: ${esc(lc1(dmText(S.owner.dm)))}`:''}${S.owner.ult&&S.owner.ult.s===S.season?` · <span class="pill bad">Ultimatum: ${esc(lc1(ultText(S.owner.ult)))}</span>`:S.owner.security<25&&S.phase==='regular'?' · <span class="pill bad">Hot seat</span>':''}${lameDuck()?' · <span class="pill warn">Lame duck</span>':''}<br>Goals: ${S.owner.goals.map(gl=>`${goalText(gl)} ${goalPace(gl)?'<span class="good">(on track ✓)</span>':'<span class="muted">(in progress)</span>'}`).join('; ')} <button class="btn small" data-act="tab" data-arg="business">Business</button></p>`:'';
   let cupTxt='';
   if(S.phase==='regular'&&cupOn()){const c=S.cup,gr=cupGroupOf(u),st=c.st[u],pos=cupTable(gr).findIndex(x=>x.tid===u)+1,inKo=c.ko&&c.ko[0].some(G=>G.a===u||G.b===u);
     if(c.champ==null&&(st.w+st.l||c.ko))cupTxt=`<p><b>In-Season Cup:</b> ${c.ko?(inKo?(c.ko.some(r=>r.some(G=>G.w!=null&&(G.a===u||G.b===u)&&G.w!==u))?'knocked out in the knockout round':'alive in the knockout round'):`out after going ${st.w}-${st.l} in group play`):`${st.w}-${st.l} in Group ${gr.name}, ${pos}${['th','st','nd','rd'][pos<4?pos:0]} place`} <button class="btn small" data-act="tab" data-arg="standings">Cup standings</button></p>`}
   const ch=chemOf(u),chTxt=`<p><b>Chemistry:</b> <span class="${chemCls(ch)}">${ch} · ${chemLabel(ch)}</span>${ch<50?' <span class="muted">· see Roster for why</span>':''}</p>`;
   const vac=ROLES.filter(([r])=>!T(u).staff[r]).map(([,l])=>l.toLowerCase());
   const vacTxt=vac.length?`<p><b class="bad">No ${vac.join(', ')}.</b> <button class="btn small" data-act="tab" data-arg="staff">Hire on the Staff tab</button></p>`:'';
-  return `<div class="home"><div class="home-top">${renderOwnMsg()}${renderStory()}${renderBizEv()}${renderPress()}${renderOffers()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${cupTxt}${next}</div></div>
-  <aside class="panel home-side"><div class="spread"><h3>News</h3><div class="row">${[['','All'],['mine','Your team']].map(([k,l])=>`<button class="btn small${(UI.newsF||'')===k?' primary':''}" data-act="newsF" data-arg="${k}">${l}</button>`).join('')}</div></div><ul class="news">${S.news.filter(n=>UI.newsF!=='mine'||n.m).slice(0,60).map(n=>`<li><span>${n.s}</span><span>${esc(n.txt)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul></aside>
+  return `<div class="home"><div class="home-top">${decStrip()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${cupTxt}${next}</div></div>
+  <aside class="panel home-side"><div class="spread"><h3>News</h3><div class="row">${[['','All'],['mine','Your team']].map(([k,l])=>`<button class="btn small${(UI.newsF||'')===k?' primary':''}" data-act="newsF" data-arg="${k}">${l}</button>`).join('')}</div></div><ul class="news">${S.news.filter(n=>UI.newsF!=='mine'||n.m).slice(0,60).map(n=>`<li><span>${n.d?`${n.s!==S.season?n.s+' ':''}${esc(n.d)}`:n.s}</span><span>${esc(n.txt)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul></aside>
   <div class="home-rest"><div class="panel"><div class="spread"><h3>Last game</h3>${S.lastBox&&S.lastBox.id&&gameLog(S.lastBox.id)?`<button class="btn small" data-act="game" data-arg="${S.lastBox.id}">Game page: flow and play-by-play</button>`:''}</div>${S.lastBox&&S.lastBox.recap?`<p>${esc(S.lastBox.recap)}</p>`:''}${renderBox()}</div>
   ${renderRace()}<div class="grid2">
    <div class="panel"><h3>${t.conf==='E'?'East':'West'} standings</h3><div class="scroll"><table><thead><tr><th class="l">#</th><th class="l">Team</th><th>W</th><th>L</th><th>Diff</th></tr></thead><tbody>${conf.map((x,i)=>`<tr class="${x.tid===u?'you':''} ${i===7?'cut':''}"><td class="l">${i+1}</td><td class="l">${chip(x.tid)} ${x.nick}</td><td>${x.w}</td><td>${x.l}</td><td>${fmtDiff(x)}</td></tr>`).join('')}</tbody></table></div></div>
@@ -5622,11 +5752,12 @@ function renderHome(){
 const gameTags=g=>(g.tv?' <span class="pill tv" title="National TV game: exposure money and bigger hype swings">TV</span>':'')+(g.cup?' <span class="pill good" title="In-Season Cup group game; it also counts in the standings">Cup</span>':'');
 const fmtDiff=x=>{const g=x.w+x.l;if(!g)return '–';const d=(x.pf-x.pa)/g;return `<span class="${d>0?'good':d<0?'bad':''}">${d>0?'+':''}${d.toFixed(1)}</span>`};
 
-function playerRows(list,{actions,sel,selAct,prospect,trend}={}){
+function playerRows(list,{actions,sel,selAct,prospect,trend,limit}={}){
   const sorters={name:p=>p.name,age:p=>p.age,ovr:p=>viewOvr(p).v,pot:p=>scoutPot(p),sal:p=>p.contract?p.contract.amt:p.ask,ppg:p=>p.st.gp?p.st.pts/p.st.gp:0};
   RK.forEach(k=>sorters[k]=p=>viewR(p,k).v);
   const f=sorters[UI.sort]||sorters.ovr;
   list=list.slice().sort((a,b)=>{const x=f(a),y=f(b);return (x>y?1:x<y?-1:0)*UI.sortDir});
+  if(limit)list=list.slice(0,limit);
   const th=(k,l,cls='')=>`<th class="sort ${cls}"${tipAttr(l)} data-act="sort" data-arg="${k}">${l}${UI.sort===k?(UI.sortDir<0?' ▾':' ▴'):''}</th>`;
   return `<div class="scroll"><table><thead><tr>${sel?'<th></th>':''}${th('name','Player','l')}<th class="l"${tipAttr('Pos')}>Pos</th>${prospect?'<th class="l">Background</th><th class="l">Pre-draft stats</th>':''}${th('age','Age')}${th('ovr','Ovr')}${th('pot','Pot')}${RK.map(k=>th(k,RLABEL[k])).join('')}${prospect?'':`${th('ppg','PPG')}<th${tipAttr('RPG')}>RPG</th><th${tipAttr('APG')}>APG</th>${th('sal','Salary')}<th${tipAttr('Thru')}>Thru</th>`}${actions?'<th></th>':''}</tr></thead><tbody>
   ${list.map(p=>{const g=p.st.gp;return `<tr class="${sel&&sel.has(p.pid)?'sel':''}">${sel?`<td><input type="checkbox" class="check" id="${selAct}-${p.pid}" data-act="${selAct}" data-arg="${p.pid}" ${sel.has(p.pid)?'checked':''} aria-label="Select ${esc(p.name)}"></td>`:''}<td class="l">${plink(p.pid,p.name)}${blkPill(p)}${p.gl?' <span class="pill muted" title="In the G League for development">G</span>':''}${p.tradeReq?' <span class="pill bad">Wants out</span>':''}${p.awards&&p.awards.some(a=>a.s===S.season-1||a.s===S.season)?` <span class="pill good" title="${esc(p.awards.filter(a=>a.s>=S.season-1).map(a=>a.s+' '+a.type).join(', '))}">★</span>`:''}${p.inj?` <span class="pill bad" title="${esc(p.inj.type)}">Out ${p.inj.g}</span>`:''}${p.draft&&p.draft.year>=S.season-1&&p.age<=23?` <span class="pill muted" title="Pick ${p.draft.pick}">R</span>`:''}</td><td class="l">${p.pos}</td>${prospect?`<td class="l"><span title="${esc(p.arch||'')}">${esc(bgText(p.bg))}</span><br><small class="muted">${esc(p.arch||'')}</small></td><td class="l"><small>${cstatText(p)}</small>${p.meas?`<br><small class="muted">${measText(p.meas)}</small>`:''}</td>`:''}<td>${p.age}</td><td class="ovr">${isUnc(p)?`~${viewOvr(p).v}`:p.ovr}${p.delta?` <small class="${p.delta>0?'good':'bad'}">${p.delta>0?'+':''}${p.delta}</small>`:''}</td><td>${isUnc(p)?`${potGrade(viewPot(p).v)} <span class="muted">${showV(viewPot(p))}</span>`:scoutPot(p)}</td>${RK.map((k,i)=>`<td>${showV(viewR(p,k))}${trend?trendTag(p,i):''}</td>`).join('')}${prospect?'':`<td>${g?r1(p.st.pts/g):'–'}</td><td>${g?r1(p.st.reb/g):'–'}</td><td>${g?r1(p.st.ast/g):'–'}</td><td>${money(p.contract?p.contract.amt:p.ask)}</td><td>${p.contract?p.contract.exp:(p.askYrs?S.season+p.askYrs-1:'')}</td>`}${actions?`<td class="l${prospect?' acts':''}">${actions(p)}</td>`:''}</tr>`}).join('')}
@@ -6156,7 +6287,7 @@ function renderCompare(){
 function twoWayBox(){
   const u=S.userTid,tw=twoWays(u);
   return `<div class="panel"><div class="spread"><h3>Two-way players</h3><span class="muted num">${tw.length}/${TW_MAX}</span></div>
-   <p class="muted" style="font-size:.85rem">Two-way contracts (${money(TW_SAL)}) don't count against your cap or the 15-man roster. These players spend the season in the G League and develop there. Sign them from the Free agents tab (under 4 years of service, 24 or younger); convert one to a standard minimum deal when you want him on the roster. From early January you can also sign free agents to 10-day contracts, twice per player, for injury cover.</p>
+   <details class="how"><summary>How two-way contracts work</summary><p class="muted" style="font-size:.85rem">Two-way contracts (${money(TW_SAL)}) don't count against your cap or the 15-man roster. These players spend the season in the G League and develop there. Sign them from the Free agents tab (under 4 years of service, 24 or younger); convert one to a standard minimum deal when you want him on the roster. From early January you can also sign free agents to 10-day contracts, twice per player, for injury cover.</p></details>
    ${tw.length?tw.map(p=>`<p class="row" style="margin:.3rem 0">${plink(p.pid,p.name)} <span class="muted">${p.pos} · ${p.age} · ovr ${p.ovr} · pot ${scoutPot(p)}</span> <button class="btn small" data-act="twUp" data-arg="${p.pid}">Convert</button> <button class="btn small" data-act="twCut" data-arg="${p.pid}">Release</button></p>`).join(''):'<p class="muted">No two-way players.</p>'}</div>`;
 }
 function renderRoster(){
@@ -6164,22 +6295,25 @@ function renderRoster(){
   const ro=pos.length?all.filter(p=>pos.includes(p.pos)):all,one=UI.cmp.length===1&&pById(UI.cmp[0]);
   const intro={ratings:`Pot is your scouts' estimate; ▲▼ mark skills that moved 2+ last summer. Players in the last two years of a deal can be extended during the season, and players on expiring deals during free agency; winning teams get a discount, losing teams may get turned down. Releasing a player keeps his full salary on your cap until the contract ends.`,
     dev:`Players 27 and under can follow a plan: about +1.5 a summer in the chosen skill (more with the matching specialist coach, see the Staff tab) and -0.2 in the others. A heavy workload adds 40% to the plan and +0.3 to every skill, but raises injury risk 15% and wears on players without a strong work ethic; light halves the plan, trims injury risk and keeps everyone happy. Plans stack with the team focus on the Staff tab.`,stats:'This season\'s numbers. GmSc is game score, a one-number summary of a box score line.',contracts:'',role:'Role comes from your rotation. Fit is how well he knows the system (newcomers need games and practice). Players judge their role by the minutes they actually get.'}[v];
-  return `${renderStory()}<div class="panel"><div class="spread"><h2>Roster</h2><span class="muted num">${all.length} players · payroll ${money(payroll(u))}${dead.length?` (incl. ${money(dead.reduce((s,d)=>s+d.amt,0))} dead money)`:''}</span></div>
+  return `<div class="panel"><div class="spread"><h2>Roster</h2><span class="muted num">${all.length} players · payroll ${money(payroll(u))}${dead.length?` (incl. ${money(dead.reduce((s,d)=>s+d.amt,0))} dead money)`:''}</span></div>
   <div class="row" role="group" aria-label="Roster view">${[['ratings','Ratings'],['stats','Stats'],['contracts','Contracts'],['role','Role and morale'],['dev','Development']].map(([k,l])=>`<button class="btn small tog${v===k?' on':''}" data-act="rview" data-arg="${k}" aria-pressed="${v===k}">${l}</button>`).join('')}</div>
   <div class="row" role="group" aria-label="Position">${POSL.map(x=>`<button class="btn small tog${pos.includes(x)?' on':''}" data-act="rpos" data-arg="${x}" aria-pressed="${pos.includes(x)}">${x}</button>`).join('')}<span class="muted" style="font-size:.85rem">${pos.length?`${ro.length} of ${all.length} players`:'All positions'}</span></div>
   ${one?`<p class="callout" style="padding:.5rem .7rem;font-size:.9rem">Comparing <b>${esc(one.name)}</b>: pick a second player with Compare here, or on any player's page. <button class="btn small" data-act="cmpClear">Cancel</button></p>`:''}
-  ${intro?`<p class="muted">${intro}</p>`:''}
+  ${intro?`<details class="how"><summary>How this view works</summary><p class="muted">${intro}</p></details>`:''}
   ${v==='ratings'?playerRows(ro,{actions:rosterActs,trend:true}):rosterTable(ro,v)}
   ${v==='contracts'?contractNotes(all):''}
   ${rosterTalkLine(all)}</div>
   ${twoWayBox()}
-  ${renderDepth()}
-  ${renderDevReport()}
-  ${renderChem()}
-  ${renderLockerRoom()}
-  ${renderRotation()}
-  ${renderLineups()}
-  <div class="panel"><h3>Your draft picks</h3><p class="muted">Projected slots use current records and roster ratings; picks further out are less certain (~).</p>${pickList(u)}</div>`;
+  ${renderDevReport()}`;
+}
+// the Roster tab in four parts, so each one fits on a screen or two
+const RSECS=[['players','Players'],['rotation','Rotation'],['chem','Chemistry'],['picks','Picks']];
+function renderRosterTab(){
+  const sec=RSECS.some(([k])=>k===UI.rsec)?UI.rsec:'players',u=S.userTid;
+  const nav=`<div class="row" role="tablist" aria-label="Roster sections">${RSECS.map(([k,l])=>`<button class="btn${sec===k?' primary':''}" role="tab" aria-selected="${sec===k}" data-act="rsec" data-arg="${k}">${l}</button>`).join('')}</div>`;
+  const body={players:renderRoster,rotation:()=>renderDepth()+renderRotation()+renderLineups(),chem:()=>renderChem()+renderLockerRoom(),
+    picks:()=>`<div class="panel"><h3>Your draft picks</h3><p class="muted">Projected slots use current records and roster ratings; picks further out are less certain (~).</p>${pickList(u)}</div>`}[sec]();
+  return nav+body;
 }
 function renderChem(){
   const u=S.userTid,ro=roster(u),c=chemOf(u),parts=chemParts(u);
@@ -6188,7 +6322,7 @@ function renderChem(){
   const li=(h,items,none)=>`<p style="font-size:.9rem"><b>${h}:</b> ${items.length?items.join(', '):`<span class="muted">${none}</span>`}</p>`;
   return `<div class="panel"><div class="spread"><h2>Chemistry</h2><span class="ovr ${chemCls(c)}" style="font-size:1.6rem">${c}</span></div>
    <p><b class="${chemCls(c)}">${chemLabel(c)}</b> <span class="muted">· ${parts.map(([k,v])=>`${k} ${v>0?'+':''}${v}`).join(' · ')}</span></p>
-   <p class="muted">Chemistry is worth up to about two points a game either way. Newcomers need games and practice to learn the system, unhappy players and starters stuck on the bench drag it down, a veteran leader lifts it, and so does a head coach the players trust (see the Staff tab). Training camp helps everyone.</p>
+   <details class="how"><summary>How chemistry works</summary><p class="muted">Chemistry is worth up to about two points a game either way. Newcomers need games and practice to learn the system, unhappy players and starters stuck on the bench drag it down, a veteran leader lifts it, and so does a head coach the players trust (see the Staff tab). Training camp helps everyone.</p></details>
    ${li('Still fitting in',fresh.map(p=>`${plink(p.pid,p.name)} <span class="muted num">${Math.round(gelOf(p)*100)}%</span>`),'Everyone knows the system.')}
    ${li('Veteran leaders',leaders.map(p=>plink(p.pid,p.name)),'None. Leaders are 29+, rated 52+, with strong work ethic and personality.')}
    ${kids.length?li('Mentoring',kids.map(([p,m])=>m?`${plink(p.pid,p.name)} <span class="muted">with ${esc(m.name)}</span>`:`${plink(p.pid,p.name)} <span class="muted">no mentor</span>`),''):''}
@@ -6276,7 +6410,7 @@ function renderRotation(){
     <button class="btn small" data-act="rotReset">Reset to auto</button></div></div>
    ${stratQuote()}
    ${rotUnits(list)}
-   <p class="muted">The first five start. Tap a player's number, then another, to swap them${matchMedia('(hover:hover)').matches?', or drag a row to a new spot':''}. Minute targets are what your coach aims for; fatigue, foul trouble, blowouts and close finishes move them around. A cap is a hard limit: he sits once he reaches it, except to open a half. Pick a backup for each starter and he takes that starter's spot when he is hurt or resting; otherwise everyone moves up. Closers play the last five minutes of games within 10 points${cl.length?'':' (now: your five best players)'}. Players judge their role by the minutes they actually get: MPG turns orange when it is 4+ off the target.</p>
+   <details class="how"><summary>How the rotation works</summary><p class="muted">The first five start. Tap a player's number, then another, to swap them${matchMedia('(hover:hover)').matches?', or drag a row to a new spot':''}. Minute targets are what your coach aims for; fatigue, foul trouble, blowouts and close finishes move them around. A cap is a hard limit: he sits once he reaches it, except to open a half. Pick a backup for each starter and he takes that starter's spot when he is hurt or resting; otherwise everyone moves up. Closers play the last five minutes of games within 10 points${cl.length?'':' (now: your five best players)'}. Players judge their role by the minutes they actually get: MPG turns orange when it is 4+ off the target.</p></details>
    ${S.phase==='playoffs'?`<p><span class="pill tv">Playoff rotation</span> <span class="muted">${depth}-man${rot.po==='same'?', same as the season':''}. Change it with Playoffs above.</span></p>`:''}
    ${selP?`<p class="row" role="status"><b>Swapping ${esc(selP.name)}:</b> <span class="muted">tap another player's number.</span> <button class="btn small" data-act="rotPick" data-arg="${selP.pid}">Cancel</button></p>`:''}
    <div class="scroll"><table class="rot-tbl"><thead><tr><th class="l">#</th><th class="l">Player</th><th${tipAttr('Ovr')}>Ovr</th><th class="l">Role</th><th title="Minutes you want him to play each game">Target min</th><th title="Hard cap: he sits once he reaches it">Max</th><th${tipAttr('MPG')}>MPG</th><th class="l">Mood</th><th class="l" title="Who takes this starter's spot when he is out">Backup</th><th></th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>
@@ -6330,8 +6464,8 @@ function renderCap(){
   <p class="muted">Minimum contracts are always open (unless they would break a hard cap), from ${money(MINSCALE[0])} for a rookie to ${money(MINSCALE[10])} for a 10-year veteran. Exceptions reset when free agency opens.</p></div>`;
   const pl=capPlan(),space=r1(CAP-pl.total);
   const line=(label,amt,extra='')=>`<tr><td class="l">${label}</td><td>${money(amt)}</td><td class="l">${extra}</td></tr>`;
-  const planner=`<div class="panel callout"><h2>Summer ${pl.Y} cap planner</h2>
-  <p class="muted">What your payroll for ${pl.Y-1}-${String(pl.Y).slice(2)} looks like going into free agency. Your own free agents carry a cap hold until you renounce them (renouncing frees the space, but you lose the right to re-sign them over the cap).</p>
+  const planner=`<div class="panel callout"><h2>Summer ${pl.Y-1} cap planner <span class="muted" style="font-size:1rem;font-weight:500">for the ${seasonTxt(pl.Y)} season</span></h2>
+  <details class="how"><summary>How the planner works</summary><p class="muted">What your payroll for ${pl.Y-1}-${String(pl.Y).slice(2)} looks like going into free agency. Your own free agents carry a cap hold until you renounce them (renouncing frees the space, but you lose the right to re-sign them over the cap).</p></details>
   <div class="scroll"><table><tbody>
   ${pl.contracts.map(c=>line(plink(c.pid,c.label),c.amt,'<span class="muted">Under contract</span>')).join('')}
   ${pl.dead.map(d=>line(esc(d.label),d.amt)).join('')}
@@ -6342,7 +6476,7 @@ function renderCap(){
   <tr class="total"><td class="l"><b>Projected payroll</b></td><td><b>${money(pl.total)}</b></td><td></td></tr>
   </tbody></table></div>
   <div class="row"><label for="planAmt">Pretend signing ($M per year)</label><input id="planAmt" class="plan-in" type="number" min="1" max="${MAXSAL}" step="0.5" placeholder="e.g. 25"><button class="btn" data-act="planAdd">Add to plan</button></div>
-  <p><b class="${space>=0?'good':'bad'}">${space>=0?`${money(space)} of cap space`:`${money(-space)} over the cap`}</b> <span class="muted">· ${money(r1(TAX-pl.total))} under the tax · ${money(r1(APRON1-pl.total))} under the first apron · ${money(r1(APRON2-pl.total))} under the second</span></p>
+  <p><b class="${space>=0?'good':'bad'}">${space>=0?`${money(space)} of cap space`:`${money(-space)} over the cap`}</b> <span class="muted">· ${[[TAX,'the tax'],[APRON1,'the first apron'],[APRON2,'the second apron']].map(([x,l])=>{const v=r1(x-pl.total);return v>=0?`${money(v)} under ${l}`:`<span class="bad">${money(-v)} over ${l}</span>`}).join(' · ')}</span></p>
   ${space<0?`<p class="muted">Over the cap you can still use a mid-level exception (${money(MLE)} below the first apron, ${money(MLE_TP)} up to the second), the ${money(BAE)} bi-annual every other season, and minimum deals.</p>`:''}</div>`;
   return planner+sheet;
 }
@@ -6379,7 +6513,7 @@ function renderBusiness(){
    <p>Mood: <b class="${mdc}">${md}</b> <span class="muted">· ${o.nrev?`${o.nrev} review${o.nrev>1?'s':''} together`:'your first season together'}</span></p>
    <ul class="needs">${oi.tr.map(k=>`<li><span><b>${OWN_TR[k][0]}</b> <span class="muted">${OWN_TR[k][1]}</span></span></li>`).join('')}</ul>
    ${gmBox}
-   ${renderOwnMsg()}
+   ${S.owner&&S.owner.msg?`<p><b>${esc(ownName())} is waiting on a reply:</b> ${esc(S.owner.msg.title)}. <button class="btn small primary" data-act="ownShow">Reply in the inbox</button></p>`:''}
    <h3>${o.season} goals</h3><div class="scroll"><table><thead><tr><th class="l">Goal</th><th class="l">Now</th><th></th><th>Security</th></tr></thead><tbody>${goals}</tbody></table></div>
    <p class="muted" style="font-size:.85rem">Reviewed after the Finals: a met goal adds 60% of its value, a missed one costs all of it${o.type==='patient'?' (60% with this owner)':''}${otr('impatient')?', plus 25%':''}${otr('handsoff')?'. Every swing is 15% smaller':''}. A title adds ${otr('competitor')?40:30}.</p>
    ${pl.length?`<h3>Promises to ${esc(oi.name.split(' ')[0])}</h3><ul class="needs">${pl.map(p=>`<li><span>${PLEDGE_TXT[p.k]}${p.k==='run'?` <span class="muted">(${T(u).w-p.w0}-${T(u).w+T(u).l-p.g0-(T(u).w-p.w0)} so far)</span>`:''} <span class="muted">· kept +${PLEDGE_FX[p.k][0]}, broken ${PLEDGE_FX[p.k][1]}</span></span></li>`).join('')}</ul>`:''}
@@ -6427,7 +6561,7 @@ function renderBusiness(){
    ${kpi('Fan hype',Math.round(b.hype),h0==null?'Season not started':`${b.hype>=h0?'Up':'Down'} ${Math.abs(Math.round(b.hype-h0))} since opening night`)}
    ${kpi('Loyal fans',Math.round(loyalOf(t)),`Season tickets fill ${Math.round(stkOf(t)*100)}% of seats`)}
    ${kpi('Average crowd',avgCrowd+'%',homeG.length?`${homeG.length} home game${homeG.length>1?'s':''} · last ${homeG[homeG.length-1][1]}%`:'Expected at today\'s price',avgCrowd<EMPTY*100?'bad':'')}
-   ${kpi('Revenue',money(tot.rev),`No. ${revRank} in the league`)}</div>`+priceHint;
+   ${kpi('Revenue',money(tot.rev),tot.rev>0?`No. ${revRank} in the league`:'Season not started')}</div>`+priceHint;
   // hype and crowd, game by game, on one 0-100 scale
   const narrow=innerWidth<600,W=narrow?360:640,H=narrow?190:210,L=34,R=74,TP=12,BT=26,yv=v=>TP+(100-v)/100*(H-TP-BT),xv=i=>L+i/81*(W-L-R);
   const hypeP=trk.map((x,i)=>`${i?'L':'M'}${xv(i).toFixed(1)},${yv(x[0]).toFixed(1)}`).join('');
@@ -6484,7 +6618,7 @@ function renderBusiness(){
     fans:()=>`<div class="grid2">${tickets}${fanbase}</div><div class="grid2">${promos}${city}</div>${jerseys}`,
     partners:()=>`<div class="grid2">${arena}${deals}</div>`,
     books:()=>`${pchart}<div class="grid2">${books}${lg}</div>`}[tab]();
-  return renderBizEv()+nav+body;
+  return (S.bizEv?`<div class="panel callout"><p><b>Business decision waiting:</b> ${esc(S.bizEv.title)}. <button class="btn small primary" data-act="bizShow">Decide in the inbox</button></p></div>`:'')+nav+body;
 }
 function renderPress(){
   const pr=S.presser;if(!pr)return '';
@@ -6532,8 +6666,9 @@ function renderFired(){
 }
 function staffEffect(role,r){
   const sg=v=>(v>0?'+':'')+v;
-  if(role==='hc')return `${sg(((r-65)*.02).toFixed(1))}% shooting on both ends`;
-  if(role==='dev')return `Players 25 and under: ${sg(((r-60)/25).toFixed(1))} per skill each summer`;
+  const hs=((r-65)*.02).toFixed(1),dv=((r-60)/25).toFixed(1);
+  if(role==='hc')return +hs?`${sg(hs)}% shooting on both ends`:'Average: no shooting bonus or penalty';
+  if(role==='dev')return +dv?`Players 25 and under: ${sg(dv)} per skill each summer`:'Average: no extra growth for players 25 and under';
   if(role==='med')return `Injury risk ×${clamp(1.15-(r-40)*.008,.7,1.2).toFixed(2)}, ${Math.round(clamp((r-50)/100,0,.4)*100)}% faster recovery${r>=75?', fewer lasting injuries':''}`;
   return `Potential estimates within about ±${(5*clamp(1.6-r/60,.2,1.2)).toFixed(1)} points`;
 }
@@ -6547,19 +6682,19 @@ function renderStaff(){
   const role=UI.staffRole||'hc',pool=S.staffPool.filter(s=>s.role===role).sort((a,b)=>b.rating-a.rating);
   const market=`<div class="panel"><div class="spread"><h3>Staff market</h3><div class="row">${ROLES.map(([r,l])=>`<button class="btn small${role===r?' primary':''}" data-act="staffRole" data-arg="${r}">${l}</button>`).join('')}</div></div>
    <p class="muted">New hires sign through ${S.season+2}. Replacing someone means you still pay the rest of his contract. ${canHire?'':'You can hire again once the playoffs are over.'}</p>
-   <div class="scroll"><table><thead><tr><th class="l">Name</th><th>Rating</th><th>Salary</th><th class="l">Effect</th><th></th></tr></thead><tbody>
+   <div class="scroll"><table class="staff-tbl"><thead><tr><th class="l">Name</th><th>Rating</th><th>Salary</th><th class="l">Effect</th><th></th></tr></thead><tbody>
    ${pool.map(s=>{const over=spend+s.salary>staffBudget(u);return `<tr><td class="l">${esc(s.name)}${traitTag(s)}</td><td class="ovr">${s.rating}</td><td>${money(s.salary)}</td><td class="l" style="white-space:normal">${staffEffect(role,s.rating)}${traitLine(s)}</td><td><button class="btn small" data-act="hireStaff" data-arg="${s.id}" ${canHire&&!over?'':'disabled'} title="${over?'Over the staff budget':''}">${t.staff[role]?'Replace':'Hire'}</button></td></tr>`}).join('')}</tbody></table></div></div>`;
   return `<div class="panel callout"><div class="spread"><h2>Coaches and staff</h2><span class="num">Staff spending <b class="${spend>staffBudget(u)?'bad':''}">${money(spend)}</b> of ${money(staffBudget(u))}${deadAmt?` <span class="muted">(incl. ${money(deadAmt)} for staff you let go)</span>`:''}</span></div>
    <p class="muted">Staff salaries come from a separate budget, not the salary cap.</p>
-   <div class="scroll"><table><thead><tr><th class="l">Role</th><th class="l">Name</th><th>Rating</th><th>Salary</th><th>Thru</th><th class="l">Effect</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
-  <div class="grid2"><div class="panel"><h3>Scheme${hc?` · ${esc(hc.name)}`:''}</h3>${hc?schemeFamLine():''}<p class="muted">Fit compares the scheme with your top 8 players. Fast pace rewards athletes, three-point offense rewards shooters, switching needs athletic defenders, pressure needs good defenders (and gives up more free throws), and drop coverage needs a rim protector.</p>${schemeRows}</div>
+   <div class="scroll"><table class="staff-tbl"><thead><tr><th class="l">Role</th><th class="l">Name</th><th>Rating</th><th>Salary</th><th>Thru</th><th class="l">Effect</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+  <div class="grid2"><div class="panel"><h3>Scheme${hc?` · ${esc(hc.name)}`:''}</h3>${hc?schemeFamLine():''}<details class="how"><summary>How scheme fit works</summary><p class="muted">Fit compares the scheme with your top 8 players. Fast pace rewards athletes, three-point offense rewards shooters, switching needs athletic defenders, pressure needs good defenders (and gives up more free throws), and drop coverage needs a rim protector.</p></details>${schemeRows}</div>
   <div class="panel"><h3>Development focus</h3><p class="muted">Players 27 and under get an extra boost in one skill each summer.</p><div class="row"><button class="btn small${!t.devFocus?' primary':''}" data-act="devFocus" data-arg="">Balanced</button>${RK.map(k=>`<button class="btn small${t.devFocus===k?' primary':''}" data-act="devFocus" data-arg="${k}">${RLABEL[k]}</button>`).join('')}</div></div></div>
   ${renderVoice()}
   ${market}`;
 }
 function schemeFamLine(){
   const f=Math.round(schemeFam(S.userTid)*100);
-  return `<p><b>Familiarity</b> <span class="num ${f>=90?'good':f>=60?'':'warn'}">${f}%</span> <span class="muted">· costs up to ${r1((100-f)*.008)}% on offense and ${r1((100-f)*.006)}% on defense until it sinks in. A new coach starts at 45%; each game adds 2.5% and training camp 20%. Changing a scheme costs 15% during the season, 10% in the summer.</span></p>`;
+  return `<p><b>Familiarity</b> <span class="num ${f>=90?'good':f>=60?'':'warn'}">${f}%</span> <span class="muted">· ${f>=100?'the team knows the system, so it costs nothing.':`costs up to ${r1((100-f)*.008)}% on offense and ${r1((100-f)*.006)}% on defense until it sinks in.`} A new coach starts at 45%; each game adds 2.5% and training camp 20%. Changing a scheme costs 15% during the season, 10% in the summer.</span></p>`;
 }
 function renderVoice(){
   const t=T(S.userTid),hc=t.staff.hc;
@@ -6889,15 +7024,33 @@ function renderAsk(){
     <p class="muted" style="font-size:.85rem">You can turn this prompt off on the Games tab.</p></div></div>`;
 }
 // sims one day at a time so the watch prompt can stop before a big game; skip lets the first day through after "Sim it"
+// what a sim day can bring that's worth stopping for: a new decision, or a rotation player out 5+ games
+function simWatch(){const u=S.userTid;return {s:noteState(),inj:roster(u).sort((a,b)=>b.ovr-a.ovr).slice(0,8).filter(p=>p.inj&&p.inj.g>=5).map(p=>p.pid)}}
+function simWhy(w){
+  if(S.userTid==null||S.opts&&S.opts.pauseDec===false)return null;
+  const s=noteState(),o=w.s; // trade offers wait a week, so they don't stop the sim
+  if(S.owner&&S.owner.msg&&s.w!==o.w)return `${ownName()} sent you a message`;
+  if(S.presser&&s.p!==o.p)return `reporters have a question (${S.presser.title})`;
+  if(S.bizEv&&s.b!==o.b)return `a business decision came up (${S.bizEv.title})`;
+  if(S.lr&&s.l!==o.l)return `something is going on in the locker room (${S.lr.title})`;
+  const p=simWatch().inj.map(pById).find(p=>!w.inj.includes(p.pid));if(p)return `${p.name} is out ${p.inj.g} games (${injLc(p.inj.type)})`;
+  return null;
+}
+function pausedBanner(){
+  const P=UI.paused;if(!P||P.ph!==S.phase)return '';
+  return `<div class="panel callout paused"><span><b>Sim paused:</b> ${esc(P.why)}.</span><span class="row"><button class="btn" data-act="alertsShow">Open inbox</button><button class="btn primary" data-act="simResume">${P.mode==='reg'&&P.n>S.sched.length-S.day?'Keep simming to the playoffs':P.mode==='reg'&&P.n>1?`Keep simming (${P.n} days left)`:'Keep simming'}</button></span></div>`;
+}
 function runSim(mode,n,skip){
-  UI.ask=null;
+  UI.ask=null;UI.paused=null;
   const stop=()=>{if(skip){skip=false;return false}const m=S.opts&&S.opts.watchAsk&&myGameToday();return !!(m&&m.big)};
   if(S.phase==='regular'){
-    for(let k=0;k<n&&S.phase==='regular';k++){if(stop()){UI.ask={mode,n:n-k};return}simDays(1)}
+    for(let k=0;k<n&&S.phase==='regular';k++){if(stop()){UI.ask={mode,n:n-k};return}
+      const w=simWatch();simDays(1);const why=k<n-1&&S.phase==='regular'&&simWhy(w);if(why){UI.paused={mode,n:n-k-1,why,ph:S.phase};return}}
     return;
   }
   const r0=S.po.rounds.length,max=mode==='poround'?8:mode==='pochamp'?40:1;
-  for(let g=0;g<max&&S.phase==='playoffs'&&(mode!=='poround'||S.po.rounds.length===r0);g++){if(stop()){UI.ask={mode,n:1};return}simPlayoffDay()}
+  for(let g=0;g<max&&S.phase==='playoffs'&&(mode!=='poround'||S.po.rounds.length===r0);g++){if(stop()){UI.ask={mode,n:1};return}
+    const w=simWatch();simPlayoffDay();const why=max>1&&S.phase==='playoffs'&&(mode!=='poround'||S.po.rounds.length===r0)&&simWhy(w);if(why){UI.paused={mode,n:1,why,ph:S.phase};return}}
 }
 // clutch time is the last five minutes of the fourth quarter or overtime with the score within five
 function clutchLine(p){
@@ -6995,14 +7148,14 @@ function renderCup(){
    <div class="cup-groups">${c.groups.map(grp).join('')}</div><h3>Knockout</h3>${ko}</div>`;
 }
 function renderGames(){
-  const u=S.userTid,rows=[];
+  const u=S.userTid,rows=[];let nx=0;
   S.sched.forEach((day,d)=>{const g=day.find(g=>g.h===u||g.a===u);if(g)rows.push({d,g})});
   // around the league: every result from the last day played
   const ld=S.phase==='regular'?S.day-1:S.sched.length-1,lg=ld>=0&&S.sched[ld]?S.sched[ld].filter(g=>g.hs!=null):[];
   const topTxt=t=>{const p=t&&pById(t[0]);return p?`${plink(p.pid,p.name)} ${t[1]}`:''};
   const around=lg.length?`<div class="panel"><h3>Around the league · day ${ld+1}</h3><div class="scroll"><table style="width:auto"><thead><tr><th class="l">Away</th><th></th><th class="l">Home</th><th></th><th class="l">Top scorers</th></tr></thead><tbody>${lg.map(g=>{const hw=g.hs>g.as;return `<tr class="${g.h===u||g.a===u?'you':''}"><td class="l">${chip(g.a)}</td><td class="${hw?'':'win'}">${g.as}</td><td class="l">${chip(g.h)}</td><td class="${hw?'win':''}">${g.hs}${g.qs&&g.qs.length>4?` <small class="muted">${g.qs.length>5?g.qs.length-4:''}OT</small>`:''}</td><td class="l"><small>${[topTxt(g.top&&g.top[1]),topTxt(g.top&&g.top[0])].filter(Boolean).join(' · ')}</small>${gameTags(g)}</td></tr>`}).join('')}</tbody></table></div></div>`:'';
   const ask=`<div class="panel"><label class="row" style="gap:.5rem"><input type="checkbox" class="check" data-act="watchAsk" ${S.opts&&S.opts.watchAsk?'checked':''}> Ask me to watch playoff, rivalry and national TV games before simming them</label><p class="muted" style="font-size:.85rem;margin:0">You can always watch today's game with the Watch game button.</p></div>`;
-  return `${ask}${around}<div class="panel"><h2>${S.season} schedule</h2><div class="scroll"><table><thead><tr><th class="l">Day</th><th class="l">Opponent</th><th class="l">Result</th><th class="l">Quarters</th><th></th></tr></thead><tbody>${rows.map(({d,g})=>{const home=g.h===u,opp=home?g.a:g.h;let res='<span class="muted">–</span>',qs='';if(g.hs!=null){const us=home?g.hs:g.as,them=home?g.as:g.hs;res=`<b class="${us>them?'good':'bad'}">${us>them?'W':'L'}</b> ${us}-${them}${g.qs&&g.qs.length>4?` <small class="muted">${g.qs.length>5?g.qs.length-4:''}OT</small>`:''}`;if(g.qs)qs=`<small class="muted num">${g.qs.map(q=>`${home?q[0]:q[1]}-${home?q[1]:q[0]}`).join(' · ')}</small>`}return `<tr><td class="l">${d+1}</td><td class="l">${home?'vs':'@'} ${chip(opp)} ${T(opp).city}${rivOf(u,opp)>=RIVAL?' <span class="pill bad">Rivalry</span>':''}${gameTags(g)}</td><td class="l">${res}</td><td class="l">${qs}</td><td class="l">${g.lid&&gameLog(g.lid)?`<button class="btn small" data-act="game" data-arg="${g.lid}">Game page</button>`:''}</td></tr>`}).join('')}</tbody></table></div><p class="muted" style="font-size:.85rem">Full play-by-play is kept for your last 10 games. TV games are on national television; Cup games also count toward the In-Season Cup (see Standings).</p></div>`;
+  return `${ask}${around}<div class="panel"><div class="spread"><h2>${seasonTxt(S.season)} schedule</h2>${rows.some(r=>r.g.hs==null)&&rows.some(r=>r.g.hs!=null)?'<button class="btn small" data-act="jump" data-arg="g-next">Jump to the next game</button>':''}</div><div class="scroll"><table><thead><tr><th class="l">Day</th><th class="l">Opponent</th><th class="l">Result</th><th class="l">Quarters</th><th></th></tr></thead><tbody>${rows.map(({d,g})=>{const home=g.h===u,opp=home?g.a:g.h;let res='<span class="muted">–</span>',qs='';if(g.hs!=null){const us=home?g.hs:g.as,them=home?g.as:g.hs;res=`<b class="${us>them?'good':'bad'}">${us>them?'W':'L'}</b> ${us}-${them}${g.qs&&g.qs.length>4?` <small class="muted">${g.qs.length>5?g.qs.length-4:''}OT</small>`:''}`;if(g.qs)qs=`<small class="muted num">${g.qs.map(q=>`${home?q[0]:q[1]}-${home?q[1]:q[0]}`).join(' · ')}</small>`}return `<tr${g.hs==null&&!nx++?' id="g-next" class="you"':''}><td class="l">${d+1}</td><td class="l">${home?'vs':'@'} ${chip(opp)} ${T(opp).city}${rivOf(u,opp)>=RIVAL?' <span class="pill bad">Rivalry</span>':''}${gameTags(g)}</td><td class="l">${res}</td><td class="l">${qs}</td><td class="l">${g.lid&&gameLog(g.lid)?`<button class="btn small" data-act="game" data-arg="${g.lid}">Game page</button>`:''}</td></tr>`}).join('')}</tbody></table></div><p class="muted" style="font-size:.85rem">Full play-by-play is kept for your last 10 games. TV games are on national television; Cup games also count toward the In-Season Cup (see Standings).</p></div>`;
 }
 // season per-game and efficiency numbers for one player (null before his first game)
 function adv(p){
@@ -7092,9 +7245,11 @@ function renderTradeBuild(){
    ${['combine','draft'].includes(S.phase)?`<p class="muted">Draft night: this year's picks are valued by their actual slot${(S.cls||{})[S.season]?` and the ${S.cls[S.season].q} class`:''}. A pick you acquire goes straight into the draft order.</p>`:''}
    <p>${chip(tid)} <b>${tname(tid)}</b> · <span class="pill">${mode}</span> <span class="muted">${modeTxt}</span><br><span class="muted" style="font-size:.85rem">${ownLine(tid)}</span></p>
    <dl class="kv"><dt>You send</dt><dd>${money(e.out)}</dd><dt>You receive</dt><dd>${money(e.inn)}</dd><dt>Your payroll after</dt><dd class="${e.youAfter>TAX?'bad':e.youAfter>CAP?'warn':''}">${money(e.youAfter)}</dd><dt>${T(tid).abbr} payroll after</dt><dd>${money(e.themAfter)}</dd><dt><label for="tradeCash">Cash</label></dt><dd><select id="tradeCash">${cashOpts.map(v=>`<option value="${v}" ${v===(UI.cash||0)?'selected':''}>${v>0?`You send ${money(v)}`:v<0?`They send ${money(-v)}`:'None'}</option>`).join('')}</select></dd></dl>
+   ${!e.empty&&e.youAfter>CAP&&e.out>0?`<p class="muted" style="font-size:.9rem">You'll be over the cap after this deal, so you can take back up to <b>${money(matchLimit(e.out,e.youAfter))}</b> for the ${money(e.out)} you send.</p>`:''}
    <p>${verdict}</p>
    <div class="row"><button class="btn primary" data-act="propose" ${open&&!e.empty?'':'disabled'}>Propose trade</button><button class="btn" data-act="tradeClear">Clear</button></div>
-   <p class="muted" style="font-size:.85rem">Teams over the cap after a trade can take back 200% of outgoing salary up to ${money(BAND1)}, outgoing plus ${money(BAND1)} up to ${money(BAND2)}, then 125%. Teams above the ${money(APRON1)} first apron can't take back more than they send; above the ${money(APRON2)} second apron they also can't combine players' salaries, and their furthest-out first is frozen. Hard-capped teams can't go over their hard cap. Free agents can't be traded until mid-December (three months if signed during the season), draft picks wait 30 days after signing, and players acquired in a trade can't be packaged with others for about two months. Rosters must stay between ${S.phase==='regular'?'13 and 15':'10 and 17'} players. No team can be left without a first-round pick in two straight future drafts. Sending out more salary than you take back while over the cap creates a traded player exception for a year, which can later take in salary without sending any back. Each team can send and receive up to ${money(CASH_MAX)} in cash a season. A trade kicker raises a player's salary when he's traded. A no-trade clause lets a player block deals except to contenders. You can protect a first you send (top-4, top-10 or lottery): if it lands in that range you keep it and owe your next first, unprotected. Swap rights let a team trade its first for the other team's if that one ends up better. Both are settled on lottery night. Rebuilding teams value picks most, and every team prices future firsts by its own read of those draft classes; injured players are discounted.</p></div>
+   ${e.empty?'':`<div class="trade-bar" role="region" aria-label="Your offer"><div class="tb-sum">${chip(tid)} <b>You send</b> ${money(e.out)} <span class="muted">(${UI.tm.size+UI.pm.size} item${UI.tm.size+UI.pm.size===1?'':'s'})</span> · <b>you get</b> ${money(e.inn)} <span class="muted">(${UI.tt.size+UI.pt.size})</span><br>${!e.legal?`<span class="bad">Not allowed: ${esc(e.reasons[0])}</span>`:e.valueOk?'<span class="good"><b>They\'d accept.</b></span>':`<span class="warn"><b>They'd say no</b></span> <span class="muted">(${Math.round(Math.min(e.ratio,2)*100)}% of what they need)</span>`}</div><div class="row"><button class="btn primary" data-act="propose" ${open?'':'disabled'}>Propose</button><button class="btn" data-act="tradeClear">Clear</button></div></div>`}
+   <details class="how"><summary>Trade rules</summary><p class="muted" style="font-size:.85rem">Teams over the cap after a trade can take back 200% of outgoing salary up to ${money(BAND1)}, outgoing plus ${money(BAND1)} up to ${money(BAND2)}, then 125%. Teams above the ${money(APRON1)} first apron can't take back more than they send; above the ${money(APRON2)} second apron they also can't combine players' salaries, and their furthest-out first is frozen. Hard-capped teams can't go over their hard cap. Free agents can't be traded until mid-December (three months if signed during the season), draft picks wait 30 days after signing, and players acquired in a trade can't be packaged with others for about two months. Rosters must stay between ${S.phase==='regular'?'13 and 15':'10 and 17'} players. No team can be left without a first-round pick in two straight future drafts. Sending out more salary than you take back while over the cap creates a traded player exception for a year, which can later take in salary without sending any back. Each team can send and receive up to ${money(CASH_MAX)} in cash a season. A trade kicker raises a player's salary when he's traded. A no-trade clause lets a player block deals except to contenders. You can protect a first you send (top-4, top-10 or lottery): if it lands in that range you keep it and owe your next first, unprotected. Swap rights let a team trade its first for the other team's if that one ends up better. Both are settled on lottery night. Rebuilding teams value picks most, and every team prices future firsts by its own read of those draft classes; injured players are discounted.</p></details></div>
   ${renderFinder()}
   <div class="grid2"><div class="panel"><h3>Your players</h3><p class="muted">Shop a player to see the best offer from every team.</p>${playerRows(roster(S.userTid),{sel:UI.tm,selAct:'tm',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findShop" data-arg="${p.pid}">Shop</button>`})}<h3>Your picks</h3>${pickList(S.userTid,UI.pm,'pm')}${protRows?`<p class="muted" style="font-size:.85rem;margin-bottom:0">Protect a first you send: if it lands in the range, you keep it and owe your next year's first instead.</p>${protRows}`:''}${swRow(UI.swY,'swY',`Give the ${T(tid).abbr} swap rights:`)}</div><div class="panel"><h3>${T(tid).abbr} players</h3><p class="muted">Find an offer to see the cheapest packages they'd accept.</p>${playerRows(roster(tid),{sel:UI.tt,selAct:'tt',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findFor" data-arg="${p.pid}">Find offer</button>`})}<h3>${T(tid).abbr} picks</h3>${pickList(tid,UI.pt,'pt')}${swRow(UI.swG,'swG','Ask for swap rights:')}</div></div>`;
 }
@@ -7103,6 +7258,13 @@ function rightsBox(){
   const u=S.userTid,rs=rightsOf(u);if(!rs.length)return '';
   return `<div class="callout" style="padding:.7rem .9rem;border-radius:10px;margin:.6rem 0"><h3 style="margin-top:0">Your free agents</h3><p class="muted" style="font-size:.85rem">You hold their Bird rights, so you can re-sign them over the cap. Their cap holds (${money(holdsOf(u))} in all) count against your cap until you re-sign or renounce them, and any team can sign them first.</p>
   ${rs.map(p=>{const c=canSign(u,p),b=birdOf(p),sh=(S.sheets||[]).find(x=>x.pid===p.pid);return `<p class="row" style="margin:.3rem 0">${plink(p.pid,p.name)} <span class="muted">${p.pos} · ${p.ovr} · asks ${money(p.ask)} for ${p.askYrs} yr${p.askYrs>1?'s':''} · ${p.rfa?`restricted, qualifying offer ${money(p.rfa.qo)}`:b.k} · hold ${money(holdOf(p))}</span> ${sh?`<b class="warn">Offer sheet from the ${T(sh.tid).nick}: ${sh.yrs} yr${sh.yrs>1?'s':''} at ${money(sh.amt)}, decide by day ${sh.until}</b> <button class="btn small primary" data-act="match" data-arg="${p.pid}">Match</button> <button class="btn small" data-act="nomatch" data-arg="${p.pid}">Let him go</button>`:`<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok?'':'disabled'} title="${esc(c.why)}">Re-sign</button> <button class="btn small" data-act="neg" data-arg="${p.pid}">Negotiate</button> <button class="btn small" data-act="renounce" data-arg="${p.pid}">Renounce</button>`}</p>`}).join('')}</div>`;
+}
+// the most common reason the Sign buttons are disabled, shown once above the list
+function faBlock(fa){
+  const why={};let n=0;
+  for(const p of fa.slice(0,80)){const c=canSign(S.userTid,p);if(c.ok)continue;n++;if(c.why)why[c.why]=(why[c.why]||0)+1}
+  const top=Object.entries(why).sort((a,b)=>b[1]-a[1])[0];if(!top)return '';
+  return `<p class="callout" style="padding:.5rem .7rem;font-size:.9rem"><b>${n===Math.min(fa.length,80)?"You can't sign anyone right now":`${n} of these players are out of reach`}:</b> ${esc(top[0])}</p>`;
 }
 const faFiltered=fa=>fa.filter(p=>(!UI.faPos.length||UI.faPos.includes(p.pos))&&(!UI.faSkill||viewR(p,UI.faSkill).v>=skillBar(UI.faSkill)));
 function renderFA(){
@@ -7114,6 +7276,7 @@ function renderFA(){
   <div class="row" role="group" aria-label="Position">${POSL.map(x=>`<button class="btn small tog${UI.faPos.includes(x)?' on':''}" data-act="faPos" data-arg="${x}" aria-pressed="${UI.faPos.includes(x)}">${x}</button>`).join('')}</div>
   <div class="row" role="group" aria-label="Strong in"><span class="muted" style="font-size:.85rem">Strong in:</span>${RK.map(k=>`<button class="btn small tog${UI.faSkill===k?' on':''}" data-act="faSkill" data-arg="${k}" aria-pressed="${UI.faSkill===k}" title="${SKILL_NAME[k]}: the league's top quarter">${RLABEL[k]}</button>`).join('')}${UI.faPos.length||UI.faSkill?' <button class="btn small" data-act="faClear">Clear filters</button>':''}</div>
   ${fa.length&&!faFiltered(fa).length?'<p class="muted">No free agents match. Clear a filter.</p>':''}
+  ${canAct?faBlock(faFiltered(fa)):''}
   ${fa.length?playerRows(faFiltered(fa).sort((a,b)=>UI.faSkill?viewR(b,UI.faSkill).v-viewR(a,UI.faSkill).v:b.ovr-a.ovr).slice(0,80),{actions:p=>{const c=canSign(S.userTid,p);return `${p.rfa&&p.rfa.tid!==S.userTid?`<span class="pill" title="Restricted free agent: the ${T(p.rfa.tid).nick} can match your offer sheet">RFA · ${T(p.rfa.tid).abbr}</span> `:''}<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok&&canAct?'':'disabled'} title="${esc(c.why)}">Sign ${c.yrs||p.askYrs}y</button> <button class="btn small" data-act="neg" data-arg="${p.pid}" ${canAct?'':'disabled'} title="Offer your own salary, years and option">Negotiate</button>${twOk(S.userTid,p)?` <button class="btn small" data-act="twSign" data-arg="${p.pid}" title="Off the cap and the 15-man roster; he develops in the G League">Two-way</button>`:''}${S.phase==='regular'&&S.day>=TEN_FROM?` <button class="btn small" data-act="tenSign" data-arg="${p.pid}" ${tenWhy(S.userTid,p)?'disabled':''} title="${esc(tenWhy(S.userTid,p)||`A prorated minimum for 10 days (${money(r1(Math.max(.1,minFor(p)*10/SEASON_DAYS)))})`)}">10-day</button>`:''}`}}):'<p class="muted">No free agents available.</p>'}</div>`;
 }
 // combine slots for one prospect, and what they've told you
@@ -7138,7 +7301,7 @@ function renderDraft(){
   const pros=all.sort((a,b)=>yours[a.pid]-yours[b.pid]);
   const focus=S.focus||[],cap=focusCap();
   let head=`<h2>${S.season} draft class</h2>
-   <p class="muted">Ratings are scouting ranges, not facts. Ranges narrow as you scout: each week your focus list gets a full look (${FOCUS_PTS} points each), and every prospect gets a little media coverage. Better analytics staff means tighter ranges and a bigger focus list.</p>
+   <details class="how"><summary>How scouting works</summary><p class="muted">Ratings are scouting ranges, not facts. Ranges narrow as you scout: each week your focus list gets a full look (${FOCUS_PTS} points each), and every prospect gets a little media coverage. Better analytics staff means tighter ranges and a bigger focus list.</p></details>
    ${S.phase==='combine'?`<p><b>Combine:</b> workouts ${S.combine.work.length}/${WORKOUTS} <span class="muted">(close look, tightens every range)</span> · interviews ${S.combine.int.length}/${INTERVIEWS} <span class="muted">(work ethic)</span> · medicals ${S.combine.med.length}/${medSlots()} <span class="muted">(durability; your medical staff sets accuracy)</span></p>`
      :`<p><b>Focus list ${focus.length}/${cap}</b> <span class="muted">· ★ adds or removes a prospect</span>${focus.length?` <button class="btn small" data-act="focusClear" aria-label="Clear the focus list">Clear list</button>`:''}</p>`}`;
   let order='';
@@ -7157,7 +7320,11 @@ function renderDraft(){
       (S.phase!=='draft'&&S.phase!=='combine'?`<button class="btn small${on?' primary':''}" data-act="focus" data-arg="${p.pid}" ${!on&&focus.length>=cap?'disabled title="Focus list is full"':''} aria-label="${on?'Stop scouting':'Scout'} ${esc(p.name)}">★</button>`:'')+
       (onClock?` <button class="btn small primary" data-act="draftPick" data-arg="${p.pid}">Draft</button>`:'');
   };
-  return report+(S.phase==='draft'?'':renderFuture())+`<div class="panel">${head}${playerRows(pros,{actions:act,prospect:true})}</div>${order}`+(S.phase==='draft'?renderFuture():'');
+  const q=(UI.dq||'').trim().toLowerCase(),hit=q?pros.filter(p=>p.name.toLowerCase().includes(q)):pros,lim=q||UI.dAll?0:30;
+  const tools=`<div class="draft-tools"><input type="search" id="draftQ" placeholder="Find a prospect" aria-label="Find a prospect by name" value="${esc(UI.dq||'')}">
+    <span class="muted" style="font-size:.85rem">${q?`${hit.length} match${hit.length===1?'':'es'}`:lim&&pros.length>lim?`Showing ${lim} of ${pros.length}`:`All ${pros.length} prospects`}</span>
+    ${!q&&pros.length>30?`<button class="btn small" data-act="dAll">${UI.dAll?'Show top 30':`Show all ${pros.length}`}</button>`:''}</div>`;
+  return report+(S.phase==='draft'?'':renderFuture())+`<div class="panel">${head}${tools}${hit.length?playerRows(hit,{actions:act,prospect:true,limit:lim}):'<p class="muted">No prospect by that name.</p>'}</div>${order}`+(S.phase==='draft'?renderFuture():'');
 }
 function renderFuture(){
   const u=S.userTid,ys=Object.keys(S.fcls||{}).map(Number).filter(y=>y>=S.season&&!(S.cls||{})[y]).sort((a,b)=>a-b);
@@ -7252,14 +7419,14 @@ function renderRecords(){
    <p class="muted" style="font-size:.85rem">Regular-season marks set in this league since ${S.rec.since||2027}. Per-game season records need 70% of the games. When a record from an earlier season falls, it makes the news.</p>
    <div class="grid2">${tbl('g',REC_G,'Single game')}${tbl('s',REC_S,'Single season')}</div></div>`;
 }
-const RENDER={home:renderHome,roster:renderRoster,cap:renderCap,staff:renderStaff,business:renderBusiness,standings:renderStandings,games:renderGames,stats:renderStats,leaders:renderStats,trade:renderTrade,fa:renderFA,draft:renderDraft,playoffs:renderPlayoffs,history:renderHistory};
+const RENDER={home:renderHome,roster:renderRosterTab,cap:renderCap,staff:renderStaff,business:renderBusiness,standings:renderStandings,games:renderGames,stats:renderStats,leaders:renderStats,trade:renderTrade,fa:renderFA,draft:renderDraft,playoffs:renderPlayoffs,history:renderHistory};
 function render(){showTip(null);
   const app=document.getElementById('app');
   if(S.userTid==null){app.innerHTML=renderPicker();return}
   if(S.awNight!=null&&!UI.cer)UI.cer={s:S.awNight,i:0,open:{}};
   if(S.wrapNight!=null&&!UI.wrap)UI.wrap={s:S.wrapNight,i:0};
   if(S.phase==='lottery'&&S.lotto&&!S.lotto.done&&S.wrapNight==null&&UI.lotSeen!==S.lotto.s){UI.lotSeen=S.lotto.s;UI.lot={auto:false,spd:UI.lotSpd||1}} // lottery night opens on its own once a season
-  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.neg?renderNeg():UI.rel!=null?renderRel():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.ownShow?renderOwnModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
+  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${pausedBanner()}${RENDER[UI.tab]()}</main>`+renderBotbar()+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.neg?renderNeg():UI.rel!=null?renderRel():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.ownShow?renderOwnModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():UI.more?renderMoreModal():'');
   if(UI.offers||UI.tab==='home')UI.offerViewed=Math.max(UI.offerViewed||0,...liveOffers().map(o=>o.id));
   if(S.presser&&(UI.pressShow||UI.tab==='home'))UI.pressViewed=Math.max(UI.pressViewed||0,S.presser.id||0);
   if(UI.tab==='home'||UI.tab==='roster')UI.lrViewed=Math.max(UI.lrViewed||0,S.lr?S.lr.id:0);
@@ -7267,7 +7434,10 @@ function render(){showTip(null);
   if(S.owner&&S.owner.msg&&(UI.ownShow||UI.tab==='home'||UI.tab==='business'))UI.ownViewed=Math.max(UI.ownViewed||0,S.owner.msg.id);
   if(NOTE.batch.length&&!(S.fired||UI.live||UI.ask||UI.cer||UI.wrap||UI.lot)){const b=NOTE.batch;NOTE.batch=[];noteToast(b);noteSync()} // held until a full-screen moment closes
   else if(!NOTE.batch.length){storyAlert();UI.offerToasted=false;offerAlert();if(!UI.offerToasted)pressAlert()}
-  const hdr=app.querySelector('.top');if(hdr)document.documentElement.style.setProperty('--hdr',hdr.offsetHeight+'px');
+  document.body.classList.toggle('has-tbar',!!app.querySelector('.trade-bar'));
+  const hdr=app.querySelector('.top'),nav=app.querySelector('nav.tabs');
+  if(hdr){const r=document.documentElement.style;r.setProperty('--hdr0',hdr.offsetHeight+'px');r.setProperty('--hdr',hdr.offsetHeight+(nav?nav.offsetHeight:0)+'px')}
+  scrollHints();
 }
 
 // ---------- events ----------
@@ -7278,15 +7448,20 @@ document.addEventListener('click',e=>{
   if(el.closest('#toast'))document.getElementById('toast').hidden=true; // any button on a toast dismisses it
   switch(act){
     case 'toastX':return;
-    case 'alertsShow':UI.alertsFrom=S.noteRead||0;S.noteRead=S.noteId||0;UI.alerts=true;UI.offers=false;UI.pressShow=false;UI.bizShow=false;UI.player=null;UI.game=null;break;
+    case 'alertsShow':openInbox(arg);break;
+    case 'inboxTab':UI.inboxTab=arg;break;
+    case 'newsTag':UI.newsTag=arg||'';break;
+    case 'simResume':{const P=UI.paused;UI.paused=null;if(P&&P.ph===S.phase)runSim(P.mode,P.n,true);break}
+    case 'optPause':S.opts=S.opts||{};S.opts.pauseDec=S.opts.pauseDec===false;break;
+    case 'optPopups':S.opts=S.opts||{};S.opts.popups=arg;break;
     case 'closeAlerts':UI.alerts=false;break;
-    case 'bizShow':UI.bizShow=true;UI.alerts=false;UI.offers=false;UI.pressShow=false;UI.player=null;UI.game=null;break;
+    case 'bizShow':openInbox('needs');break;
     case 'closeBiz':UI.bizShow=false;break;
-    case 'ownShow':UI.ownShow=true;UI.alerts=false;UI.offers=false;UI.pressShow=false;UI.bizShow=false;UI.player=null;UI.game=null;break;
+    case 'ownShow':openInbox('needs');break;
     case 'closeOwn':UI.ownShow=false;break;
-    case 'ownAns':ownAnswer(num);UI.ownShow=false;break;
+    case 'ownAns':ownAnswer(num);break;
     case 'pickSort':UI.pickSort=arg;break;
-    case 'pickTeam':S.userTid=num;newOwner(num);pressMedia();news(`You took over the ${tname(num)}. Your owner: ${ownName()}, ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);UI.tab='home';break;
+    case 'pickTeam':UI.toTop=true;S.userTid=num;newOwner(num);pressMedia();news(`You took over the ${tname(num)}. Your owner: ${ownName()}, ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);UI.tab='home';break;
     case 'takeJob':UI.iv=null;takeJob(num);pressMedia();break;
     case 'ivStart':UI.iv={tid:num,qs:ivQuestions(num),i:0,sec:0,tr:0,log:[]};break;
     case 'ivAns':ivAnswer(num);break;
@@ -7297,12 +7472,12 @@ document.addEventListener('click',e=>{
       UI.confirm=null;resign();break;
     case 'presser':answerPress(num);if(!S.presser)UI.pressShow=false;break;
     case 'lrAns':answerStory(num);break;
-    case 'lrShow':UI.alerts=false;UI.tab='roster';UI.player=null;UI.offers=false;UI.pressShow=false;document.getElementById('toast').hidden=true;window.scrollTo(0,0);break;
-    case 'pressShow':UI.alerts=false;UI.pressShow=true;UI.offers=false;UI.player=null;UI.game=null;document.getElementById('toast').hidden=true;break;
+    case 'lrShow':openInbox('needs');break;
+    case 'pressShow':openInbox('needs');break;
     case 'closePress':UI.pressShow=false;break;
     case 'offerAccept':acceptOffer(num);break;
     case 'offerDecline':S.offers=S.offers.filter(o=>o.id!==num);break;
-    case 'offersShow':UI.alerts=false;UI.offers=true;UI.player=null;document.getElementById('toast').hidden=true;break;
+    case 'offersShow':openInbox('needs');break;
     case 'closeOffers':UI.offers=false;break;
     case 'offerOpen':{const o=S.offers.find(x=>x.id===num);if(!o)break;UI.offers=false;clearTrade();UI.tview='build';UI.tradeTid=o.tid;o.tm.forEach(x=>UI.tm.add(x));o.tt.forEach(x=>UI.tt.add(x));o.pm.forEach(x=>UI.pm.add(x));o.pt.forEach(x=>UI.pt.add(x));UI.tab='trade';break}
     case 'setPrice':{const v=parseInt(document.getElementById('ticketPrice').value,10);if(!(v>=20&&v<=400)){toast('Enter an average ticket price between $20 and $400.');return}
@@ -7314,12 +7489,17 @@ document.addEventListener('click',e=>{
       news(how==='cash'?`You started a ${money(c)} arena upgrade. It opens next season.`:`You started an arena upgrade, financed at ${money(c)} a season for ${ARENA_YEARS} seasons. It opens next season.`);break}
     case 'askOwner':askOwner(arg);break;
     case 'bizTab':UI.biz=arg;break;
-    case 'bizAns':answerBiz(num);UI.bizShow=false;break;
+    case 'bizAns':answerBiz(num);break;
     case 'promo':queuePromo(arg);break;
     case 'city':pickCity(arg);break;
     case 'sthDisc':if([.05,.15,.25].includes(num))T(S.userTid).biz.disc=num;break;
     case 'deal':{const [k,i]=arg.split(':');takeDeal(k,Number(i));break}
-    case 'tab':UI.tab=arg;UI.alerts=false;if(el.dataset.dpview){UI.rview='dev';UI.player=null}break;
+    case 'moreShow':UI.more=true;break;
+    case 'closeMore':UI.more=false;break;
+    case 'rsec':UI.rsec=arg;UI.toTop=true;break;
+    case 'dAll':UI.dAll=!UI.dAll;break;
+    case 'jump':UI.jumpTo=arg;break;
+    case 'tab':if(UI.tab!==arg)UI.toTop=true;if(el.dataset.rsec)UI.rsec=el.dataset.rsec;UI.tab=arg;UI.alerts=false;UI.more=false;document.getElementById('toast').hidden=true;if(el.dataset.dpview){UI.rview='dev';UI.player=null}break;
     case 'simday':runSim('reg',1);break;
     case 'simweek':runSim('reg',7);break;
     case 'simreg':runSim('reg',999);break;
@@ -7471,7 +7651,8 @@ document.addEventListener('click',e=>{
       UI.confirm=null;fireStaff(arg);break;
     case 'scheme':{const [k,o]=arg.split(':');setScheme(k,o);break}
     case 'devFocus':T(S.userTid).devFocus=arg||null;break;
-    case 'settingsShow':UI.settings=true;break;
+    case 'settingsShow':UI.settings=true;UI.more=false;break;
+    case 'exportSave':exportSave();return;
     case 'closeSettings':UI.settings=false;break;
     case 'newCareer':
       if(Date.now()-confirmNew>4000){confirmNew=Date.now();el.textContent='Click again to erase this career';return}
@@ -7479,6 +7660,8 @@ document.addEventListener('click',e=>{
     default:return;
   }
   save();render();
+  if(UI.toTop){UI.toTop=false;window.scrollTo(0,0)}
+  if(UI.jumpTo){const j=document.getElementById(UI.jumpTo);UI.jumpTo=null;if(j)j.scrollIntoView({block:'center'})}
 });
 // chart tooltips: any element with data-tip; chart columns also move the crosshair
 function showTip(el){
@@ -7488,14 +7671,34 @@ function showTip(el){
   const xh=el.dataset.x&&el.closest('svg')&&el.closest('svg').querySelector('.xh');if(xh){xh.setAttribute('x1',el.dataset.x);xh.setAttribute('x2',el.dataset.x);xh.setAttribute('visibility','visible')}
 }
 document.addEventListener('mouseover',e=>showTip(e.target.closest&&e.target.closest('[data-tip]')));
-document.addEventListener('scroll',()=>showTip(null),true);
-document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.ownShow)UI.ownShow=false;else if(UI.alerts)UI.alerts=false;else if(UI.settings)UI.settings=false;else return;render()});
+document.addEventListener('scroll',e=>{showTip(null);if(e.target.classList&&e.target.classList.contains('scroll'))scrollHint(e.target)},true);
+addEventListener('resize',()=>scrollHints());
+// a shadow on whichever side of a wide table still has columns to scroll to
+function scrollHint(el){const m=el.scrollWidth-el.clientWidth;el.classList.toggle('more-r',m>2&&el.scrollLeft<m-2);el.classList.toggle('more-l',m>2&&el.scrollLeft>2)}
+function scrollHints(){document.querySelectorAll('.scroll').forEach(scrollHint)}
+// touch screens have no hover: a tap on anything with a tooltip (that isn't a button) shows it
+document.addEventListener('click',e=>{
+  if(!matchMedia('(hover: none)').matches)return;
+  const el=e.target.closest&&e.target.closest('[title]');
+  if(!el||el.closest('button,[data-act],a,input,select,label')){return}
+  const tip=document.getElementById('tip');tip.textContent=el.getAttribute('title');tip.hidden=false;
+  const r=el.getBoundingClientRect(),w=tip.offsetWidth;
+  tip.style.left=Math.max(8,Math.min(innerWidth-w-8,r.left+r.width/2-w/2))+'px';tip.style.top=Math.max(8,r.top-tip.offsetHeight-8)+'px';
+  clearTimeout(showTip.t);showTip.t=setTimeout(()=>tip.hidden=true,4000);
+},true);
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.ownShow)UI.ownShow=false;else if(UI.alerts)UI.alerts=false;else if(UI.settings)UI.settings=false;else if(UI.more)UI.more=false;else return;render()});
 document.addEventListener('dragstart',e=>{const tr=e.target.closest&&e.target.closest('.rot-tbl tr[data-rpid]');if(!tr)return;UI.rotDrag=Number(tr.dataset.rpid);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',tr.dataset.rpid)}catch(_){}});
 document.addEventListener('dragover',e=>{if(UI.rotDrag==null)return;const tr=e.target.closest&&e.target.closest('.rot-tbl tr[data-rpid]');document.querySelectorAll('.rot-tbl tr.drop').forEach(x=>x!==tr&&x.classList.remove('drop'));if(!tr)return;e.preventDefault();tr.classList.add('drop')});
 document.addEventListener('drop',e=>{if(UI.rotDrag==null)return;const tr=e.target.closest&&e.target.closest('.rot-tbl tr[data-rpid]');const a=UI.rotDrag;UI.rotDrag=null;if(!tr)return;e.preventDefault();if(rotSwap(a,Number(tr.dataset.rpid),true)){UI.rotSel=null;save()}render()});
 document.addEventListener('dragend',()=>{if(UI.rotDrag==null)return;UI.rotDrag=null;document.querySelectorAll('.rot-tbl tr.drop').forEach(x=>x.classList.remove('drop'))});
+document.addEventListener('input',e=>{
+  if(e.target.id!=='draftQ')return;
+  const el=e.target,pos=el.selectionStart;UI.dq=el.value;render();
+  const n=document.getElementById('draftQ');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}
+});
 document.addEventListener('change',e=>{
   const el=e.target;
+  if(el.id==='importSave'){if(el.files&&el.files[0])importSave(el.files[0]);return}
   if(UI.neg&&['negAmt','negYrs','negOpt'].includes(el.id)){negRead();const s=document.getElementById('negSum'),p=pById(UI.neg.pid);if(s&&p)s.innerHTML=negSummary(p,UI.neg);return}
   if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();UI.cash=0;render();return}
   if(el.id==='tradeCash'){UI.cash=Number(el.value)||0;render();return}
