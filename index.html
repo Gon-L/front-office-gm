@@ -103,6 +103,12 @@ th.sort{cursor:pointer} th[title]:not(.sort){cursor:help}
 tr.you td{background:var(--you)}
 tr.cut td{border-bottom:2px dashed var(--muted)}
 tr.sel td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.rot-tbl td[draggable]{cursor:grab}
+.rot-tbl tr.drop td{box-shadow:inset 0 2px 0 var(--accent)}
+.rot-tbl .rot-pick{min-width:2.2em}
+.rot-units{width:auto;min-width:min(100%,560px)}
+.rot-units td small{color:var(--muted);font-size:.72rem;margin-left:.15rem}
+.rot-units td small.good{color:var(--good)} .rot-units td small.bad{color:var(--bad)}
 .ovr{font-family:var(--display);font-weight:700;font-size:1.05rem}
 .pill{display:inline-block;padding:.05rem .45rem;border-radius:99px;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;border:1px solid currentColor}
 .box-score{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:1rem}
@@ -345,7 +351,9 @@ const COACHES0={ATL:['Quin Snyder',80],BOS:['Joe Mazzulla',84],BKN:['Jordi Ferna
 // 2026 draft picks on opening rosters, eligible for Rookie of the Year in 2026-27
 const ROOKIES0=new Set(['Kingston Flemings','Zuby Ejiofor','Henri Veesaar','Chris Cenac Jr.','Mikel Brown Jr.','Joshua Jefferson','Hannes Steinbach','Christian Anderson Jr.','Caleb Wilson','Dailyn Swain','Meleek Thomas','Khalifa Diop','Ebuka Okorie','Keaton Wagler','Brayden Burries','Nate Ament','Bogoljub Markovic','Ryan Conwell','Labaron Philon Jr.','Allen Graves','Jaden Bradley','AJ Dybantsa','Morez Johnson Jr.','Sergio de Larrea','Trevon Brazile','Yaxel Lendeborg','Bruce Thornton','Cameron Carr','Cameron Boozer','Karim Lopez','Isaiah Evans','Aday Mara','Bennett Stirtz','Koa Peat','Darius Acuff Jr.','Alex Karaban','Emanuel Sharp','Jayden Quaintance','Tarris Reed Jr.','Darryn Peterson']);
 // no opening injuries: current injury reports aren't tracked in this data
-const INJ0={};
+const INJ0={'Drew Eubanks':['Torn pectoral',45]};
+// unsigned veterans on opening night 2026-27: waived in camp, still holding out, or chasing one more run
+const FA0=`Kevin Porter Jr.|PG|26|52|0|0|0|PA;Cam Thomas|SG|25|49|0|0|0|SI;Bruce Brown|SG|30|47|0|0|0|D;Rob Dillingham|PG|21|41|50|0|0|P;Kevin Love|PF|38|41|0|0|0|SR;Doug McDermott|SF|34|41|0|0|0|S;Aaron Holiday|PG|30|41|0|0|0|S;Chris Boucher|PF|33|41|0|0|0|R;Ochai Agbaji|SF|26|41|0|0|0|D;John Konchar|SG|30|41|0|0|0|D;Dalton Knecht|SF|25|40|44|0|0|S;Gabe Vincent|PG|30|40|0|0|0|S;Seth Curry|SG|36|40|0|0|0|S;Dwight Powell|C|35|40|0|0|0|R;Cameron Payne|PG|32|40|0|0|0|S;Drew Eubanks|C|29|40|0|0|0|R;Victor Oladipo|SG|34|39|0|0|0|D;Tony Bradley|C|28|39|0|0|0|R;Bismack Biyombo|C|34|39|0|0|0|DR;Mason Plumlee|C|36|39|0|0|0|RP;Jeff Green|PF|40|38|0|0|0|`;
 // waived players still paid by the team in 2026-27: [amount per season, last season]
 const DEAD0={
  ATL:[{amt:5.2,exp:2027,name:'Devin Carter'}],
@@ -477,6 +485,7 @@ function newLeague(){
     ROSTERS[t.abbr].split(';').forEach(line=>S.players.push(realPlayer(line,t.tid)));
     (DEAD0[t.abbr]||[]).forEach(d=>t.dead.push({...d}));
   }
+  FA0.split(';').forEach(line=>{const p=realPlayer(line,-1);p.contract=null;p.ask=askFloor(p);p.askYrs=p.age<=26?2:1;S.players.push(p)});
   for(let y=0;y<4;y++)addPicks(S.season+y);
   setupStaff();seedOwners();
   setupBusiness();
@@ -498,7 +507,7 @@ function realPlayer(line,tid){
   const p={pid:S.nextPid++,tid,name,pos,age:+age,r,ovr:calcOvr(r),pot:0,scout:Math.round(randn()*3),contract:{amt:+sal,exp:+exp},st:newStats(),hist:[],draft:null,ask:0,askYrs:1};
   p.pot=+pot?Math.max(p.ovr,+pot):p.age<=24?Math.round(p.ovr+(25-p.age)*1.5):p.ovr;
   if(INJ0[name])p.inj={type:INJ0[name][0],g:INJ0[name][1]};
-  if(ROOKIES0.has(name))p.rookieSeason=S.season;
+  if(ROOKIES0.has(name))p.rookieSeason=S.season;else p.vet=true;
   return p;
 }
 // ---------- draft classes ----------
@@ -2852,9 +2861,9 @@ function traitsOf(p){
 const weMult=p=>(traitsOf(p).we-50)/35; // about ±0.9 rating per skill per summer at the extremes
 const durMult=p=>clamp(1.6-traitsOf(p).dur/100,.7,1.4); // injury risk ×0.7 to ×1.4
 const traitLabel=v=>v>=72?'High':v>=58?'Good':v>=42?'Average':v>=28?'Low':'Very low';
-// you learn a veteran's traits after watching two seasons; prospects only through interviews and medicals
-const weKnown=p=>p.int||p.hist.length>=2;
-const durKnown=p=>p.med!=null||p.hist.length>=2;
+// opening-roster veterans start known; anyone else after two seasons, or prospects through interviews and medicals
+const weKnown=p=>p.int||p.vet||p.hist.length>=2;
+const durKnown=p=>p.med!=null||p.vet||p.hist.length>=2;
 const durSeen=p=>p.med!=null&&!p.hist.length?p.med:traitsOf(p).dur;
 // ---------- pre-draft combine ----------
 const COMBINE_INVITES=70;
@@ -5342,15 +5351,60 @@ function renderChem(){
    ${bench.length?li('Want to start',bench.map(p=>`${plink(p.pid,p.name)} <span class="muted">(open his page to talk roles)</span>`),''):''}</div>`;
 }
 // your rotation: order (first five start), minute targets, closers, and back-to-back rest
+// move or swap two players in your rotation order; insert puts a before b instead of trading places
+function rotSwap(a,b,insert){
+  const t=T(S.userTid),rot=t.rot=t.rot||{},ids=rotationFor(S.userTid,false,true).list.map(x=>x.p.pid);
+  const i=ids.indexOf(a),j=ids.indexOf(b);if(i<0||j<0||i===j)return false;
+  if(insert){ids.splice(i,1);ids.splice(ids.indexOf(b)+(i<j?1:0),0,a)}else[ids[i],ids[j]]=[ids[j],ids[i]];
+  rot.order=ids;return true;
+}
+// each team's starting five and next five, averaged by skill as you see them, so yours can be ranked
+function rotUnitShape(){
+  const k=`${S.season}:${S.phase}:${S.tick}:${JSON.stringify(rotOf(S.userTid))}:${roster(S.userTid).map(p=>p.pid+(p.inj?'i':'')+(p.gl?'g':'')).join()}`;
+  if(UI.rotShape&&UI.rotShape.k===k)return UI.rotShape;
+  const avg=xs=>Object.fromEntries(['ovr',...RK].map(s=>[s,xs.reduce((a,p)=>a+(s==='ovr'?viewOvr(p).v:viewR(p,s).v),0)/Math.max(1,xs.length)]));
+  const by={};
+  S.teams.forEach(t=>{const l=rotationFor(t.tid,false,true).list;by[t.tid]=[avg(l.slice(0,5).map(x=>x.p)),avg(l.slice(5).filter(x=>x.tgt>0).slice(0,5).map(x=>x.p))]});
+  return UI.rotShape={k,by,rank:(u,s,tid)=>1+S.teams.filter(t=>by[t.tid][u][s]>by[tid][u][s]+1e-9).length};
+}
+function rotUnits(list){
+  const u=S.userTid,sh=rotUnitShape(),mine=sh.by[u],five=list.slice(0,5).map(x=>x.p);
+  const cell=(n,s,v)=>{const r=sh.rank(n,s,u);return `<td>${Math.round(v)}<small class="${r<=8?'good':r>=23?'bad':''}" title="${ordinal(r)} of ${S.teams.length}">${ordinal(r)}</small></td>`};
+  const row=(n,lbl)=>`<tr><td class="l">${lbl}</td>${['ovr',...RK].map(s=>cell(n,s,mine[n][s])).join('')}</tr>`;
+  const warn=[];
+  if(five.length===5&&!five.some(p=>p.pos==='C'||p.pos==='PF'))warn.push('No big man in the starting five.');
+  if(five.length===5&&!five.some(p=>p.pos==='PG'||p.pos==='SG'))warn.push('No guard in the starting five.');
+  if(five.length===5&&five.filter(p=>p.pos==='C').length>=3)warn.push('Three centers start: spacing will suffer.');
+  return `<div class="scroll"><table class="rot-units"><thead><tr><th class="l">Unit</th><th title="Average overall">Ovr</th>${RK.map(s=>`<th title="${SKILL_NAME[s]}">${{ins:'Ins',thr:'3PT',pas:'Pas',reb:'Reb',def:'Def',ath:'Ath'}[s]}</th>`).join('')}</tr></thead>
+   <tbody>${row(0,'<b>Starting five</b>')}${row(1,'Bench <span class="muted">(next 5)</span>')}</tbody></table></div>
+   <p class="muted" style="font-size:.85rem;margin:.3rem 0 .6rem">Small numbers rank each unit against the other teams' starters or benches${warn.length?`. <b class="warn">${warn.join(' ')}</b>`:'.'}</p>`;
+}
+// promises and owner demands that hang on this player's role or minutes: [pill html] given his slot and target
+function rotFlags(p,i,m){
+  const o=[],q=myProm(p),dm=S.owner&&S.owner.dm,pill=(ok,txt,tip)=>` <span class="pill ${ok?'good':'bad'}" title="${tip}">${txt}</span>`;
+  if(q&&q.k==='start')o.push(pill(i<5,'Promised start',i<5?'You promised him a starting spot, and he starts.':'You promised him a starting spot. Move him into the first five.'));
+  if(q&&q.k==='min')o.push(pill(m>=q.tgt-2,`Promised ${q.tgt} min`,m>=q.tgt-2?`You promised ${q.tgt} minutes. He needs ${q.tgt-2}+ a game.`:`You promised ${q.tgt} minutes, but his target is ${m}. He needs ${q.tgt-2}+ a game.`));
+  if(dm&&dm.k==='start'&&dm.d.pid===p.pid){
+    if(dm.lvl==='yes')o.push(pill(i<5,"Owner's pick",i<5?'Your owner wants him starting, and he does.':'Your owner wants him starting 7 of 10 games. Move him into the first five.'));
+    else{const need=Math.ceil(dm.d.mpg0+4);o.push(pill(m>=need,"Owner's pick",m>=need?`Your owner wants him at ${need}+ minutes, and his target is ${m}.`:`Your owner wants him at ${need}+ minutes, but his target is ${m}.`))}
+  }
+  return o.join('');
+}
+// your rotation: order (first five start), minute targets, closers, and back-to-back rest
 function renderRotation(){
   const u=S.userTid,rot=rotOf(u),{list}=rotationFor(u,false,true),hurt=roster(u).filter(p=>p.inj||(p.gl&&!list.some(x=>x.p===p)));
   const ov=rot.mins||{},cl=rot.closers||[],autoCl=list.map(x=>x.p).sort((a,b)=>b.ovr-a.ovr).slice(0,5).map(p=>p.pid);
   const closers=cl.length?cl:autoCl,total=Math.round(list.reduce((s,x)=>s+x.tgt,0)/60);
-  const row=(x,i)=>{const p=x.p,m=Math.round(x.tgt/60),mpg=p.st.gp?r1(p.st.min/p.st.gp):'–';
-    return `<tr class="${i===5?'cut':''}"><td class="l num">${i+1}</td><td class="l">${plink(p.pid,p.name)} <span class="muted">${p.pos}</span>${p.ramp>0?' <span class="pill warn" title="Back from injury: 20-minute limit">Limit</span>':''}</td><td class="ovr">${p.ovr}</td>
-     <td class="l">${i<5?'<b>Starter</b>':i===5&&m>0?'Sixth man':m>0?'Rotation':'<span class="muted">Reserve</span>'}${i>=5&&wantsStart(p)?(roleOK(p)?' <span class="pill good" title="Accepted a bench role this season">OK</span>':' <span class="pill warn" title="Starter-level player: unhappy coming off the bench">Wants to start</span>'):''}${gelOf(p)<.8?` <span class="pill muted" title="Still learning the system">New ${Math.round(gelOf(p)*100)}%</span>`:''}</td>
+  if(UI.rotSel!=null&&!list.some(x=>x.p.pid===UI.rotSel))UI.rotSel=null;
+  const selP=UI.rotSel!=null&&pById(UI.rotSel);
+  const row=(x,i)=>{const p=x.p,m=Math.round(x.tgt/60),mpgN=p.st.gp?p.st.min/p.st.gp:null,mpg=mpgN!=null?r1(mpgN):'–',sel=UI.rotSel===p.pid;
+    // players judge their role by the minutes they get, so show how far the real number drifts from the plan
+    const gap=mpgN!=null&&p.st.gp>=3?Math.round(mpgN-m):0;
+    const mpgCell=Math.abs(gap)>=4?`<span class="warn" title="Averages ${mpg}, target ${m}">${mpg}</span> <small class="muted">${gap>0?'+':''}${gap}</small>`:mpg;
+    return `<tr class="${[i===5?'cut':'',sel?'sel':''].filter(Boolean).join(' ')}" data-rpid="${p.pid}"><td class="l num"><button class="btn small rot-pick${sel?' primary':''}" data-act="rotPick" data-arg="${p.pid}" title="${sel?'Tap again to cancel':selP?`Swap with ${esc(selP.name)}`:'Tap, then tap another number to swap'}" aria-label="${selP&&!sel?`Swap ${esc(p.name)} with ${esc(selP.name)}`:`Pick ${esc(p.name)} to swap`}" aria-pressed="${sel}">${i+1}</button></td><td class="l" draggable="true" title="Drag to move">${plink(p.pid,p.name)} <span class="muted">${p.pos}</span>${p.ramp>0?' <span class="pill warn" title="Back from injury: 20-minute limit">Limit</span>':''}</td><td class="ovr">${p.ovr}</td>
+     <td class="l">${i<5?'<b>Starter</b>':i===5&&m>0?'Sixth man':m>0?'Rotation':'<span class="muted">Reserve</span>'}${i>=5&&wantsStart(p)?(roleOK(p)?' <span class="pill good" title="Accepted a bench role this season">OK</span>':' <span class="pill warn" title="Starter-level player: unhappy coming off the bench">Wants to start</span>'):''}${gelOf(p)<.8?` <span class="pill muted" title="Still learning the system">New ${Math.round(gelOf(p)*100)}%</span>`:''}${rotFlags(p,i,m)}</td>
      <td><input class="plan-in rot-min" type="number" min="0" max="44" step="1" inputmode="numeric" data-pid="${p.pid}" value="${ov[p.pid]!=null?ov[p.pid]:''}" placeholder="${m}" aria-label="Minute target for ${esc(p.name)}" style="width:4.5em"></td>
-     <td>${mpg}</td><td>${moodTag(p)}</td>
+     <td>${mpgCell}</td><td>${moodTag(p)}</td>
      <td class="l"><button class="btn small${closers.includes(p.pid)?' primary':''}" data-act="rotCloser" data-arg="${p.pid}" title="Plays the end of close games" aria-label="Closer: ${esc(p.name)}">Closer</button>
       <button class="btn small" data-act="rotMove" data-arg="${p.pid}:-1" ${i===0?'disabled':''} aria-label="Move ${esc(p.name)} up">▲</button><button class="btn small" data-act="rotMove" data-arg="${p.pid}:1" ${i===list.length-1?'disabled':''} aria-label="Move ${esc(p.name)} down">▼</button></td></tr>`};
   return `<div class="panel"><div class="spread"><h2>Rotation</h2><div class="row">
@@ -5358,8 +5412,10 @@ function renderRotation(){
     <label class="opt">Back-to-backs <select id="rotRest"><option value="">Play everyone</option><option value="vets" ${rot.rest==='vets'?'selected':''}>Rest players 32+</option><option value="stars" ${rot.rest==='stars'?'selected':''}>Rest top 2</option></select></label>
     <label class="opt"><input type="checkbox" class="check" id="rotRamp" ${rot.ramp===false?'':'checked'}> Ease players back from injuries</label>
     <button class="btn small" data-act="rotReset">Reset to auto</button></div></div>
-   <p class="muted">The first five start. Minute targets are what your coach aims for; fatigue, foul trouble, blowouts and close finishes move them around. Leave a box blank to use the depth chart's number. Closers play the last five minutes of games within 10 points${cl.length?'':' (now: your five best players)'}. Players judge their role by the minutes they actually get.</p>
-   <div class="scroll"><table><thead><tr><th class="l">#</th><th class="l">Player</th><th${tipAttr('Ovr')}>Ovr</th><th class="l">Role</th><th title="Minutes you want him to play each game">Target min</th><th${tipAttr('MPG')}>MPG</th><th class="l">Mood</th><th></th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>
+   ${rotUnits(list)}
+   <p class="muted">The first five start. Tap a player's number, then another, to swap them${matchMedia('(hover:hover)').matches?', or drag a row to a new spot':''}. Minute targets are what your coach aims for; fatigue, foul trouble, blowouts and close finishes move them around. Leave a box blank to use the depth chart's number. Closers play the last five minutes of games within 10 points${cl.length?'':' (now: your five best players)'}. Players judge their role by the minutes they actually get: MPG turns orange when it is 4+ off the target.</p>
+   ${selP?`<p class="row" role="status"><b>Swapping ${esc(selP.name)}:</b> <span class="muted">tap another player's number.</span> <button class="btn small" data-act="rotPick" data-arg="${selP.pid}">Cancel</button></p>`:''}
+   <div class="scroll"><table class="rot-tbl"><thead><tr><th class="l">#</th><th class="l">Player</th><th${tipAttr('Ovr')}>Ovr</th><th class="l">Role</th><th title="Minutes you want him to play each game">Target min</th><th${tipAttr('MPG')}>MPG</th><th class="l">Mood</th><th></th></tr></thead><tbody>${list.map(row).join('')}</tbody></table></div>
    <p class="muted num" style="font-size:.85rem">Planned minutes: ${total} of 240.${total>242?' <b class="warn">Over 240: everyone else gets squeezed.</b>':''}${hurt.length?` Unavailable: ${hurt.map(p=>esc(p.name)+(p.inj?` (${injLc(p.inj.type)})`:' (G League)')).join(', ')}.`:''}</p></div>`;
 }
 // ---------- cap sheet and summer planner ----------
@@ -6426,7 +6482,8 @@ document.addEventListener('click',e=>{
       let cl=rot.closers&&rot.closers.length?rot.closers.slice():rotationFor(S.userTid,false,true).list.map(x=>x.p).sort((a,b)=>b.ovr-a.ovr).slice(0,5).map(p=>p.pid);
       if(cl.includes(num))cl=cl.filter(x=>x!==num);else if(cl.length<5)cl.push(num);else{toast('Five closers at most. Remove one first.');return}
       rot.closers=cl;break}
-    case 'rotReset':delete T(S.userTid).rot;break;
+    case 'rotReset':delete T(S.userTid).rot;UI.rotSel=null;break;
+    case 'rotPick':if(UI.rotSel==null||UI.rotSel===num)UI.rotSel=UI.rotSel===num?null:num;else{rotSwap(UI.rotSel,num);UI.rotSel=null}break;
     case 'modal':return;
     case 'findFor':case 'findShop':{
       const p=pById(num);UI.player=null;UI.tab='trade';UI.tview='build';
@@ -6500,6 +6557,10 @@ function showTip(el){
 document.addEventListener('mouseover',e=>showTip(e.target.closest&&e.target.closest('[data-tip]')));
 document.addEventListener('scroll',()=>showTip(null),true);
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(UI.live){closeLive();save()}else if(UI.ask)UI.ask=null;else if(UI.cer){closeCer();save()}else if(UI.wrap){closeWrap();save()}else if(UI.lot)closeLot();else if(UI.player!=null)UI.player=null;else if(UI.game!=null){UI.game=null;if(UI.resume){resumeSim();save()}}else if(UI.offers)UI.offers=false;else if(UI.pressShow)UI.pressShow=false;else if(UI.bizShow)UI.bizShow=false;else if(UI.ownShow)UI.ownShow=false;else if(UI.alerts)UI.alerts=false;else if(UI.settings)UI.settings=false;else return;render()});
+document.addEventListener('dragstart',e=>{const tr=e.target.closest&&e.target.closest('.rot-tbl tr[data-rpid]');if(!tr)return;UI.rotDrag=Number(tr.dataset.rpid);e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',tr.dataset.rpid)}catch(_){}});
+document.addEventListener('dragover',e=>{if(UI.rotDrag==null)return;const tr=e.target.closest&&e.target.closest('.rot-tbl tr[data-rpid]');document.querySelectorAll('.rot-tbl tr.drop').forEach(x=>x!==tr&&x.classList.remove('drop'));if(!tr)return;e.preventDefault();tr.classList.add('drop')});
+document.addEventListener('drop',e=>{if(UI.rotDrag==null)return;const tr=e.target.closest&&e.target.closest('.rot-tbl tr[data-rpid]');const a=UI.rotDrag;UI.rotDrag=null;if(!tr)return;e.preventDefault();if(rotSwap(a,Number(tr.dataset.rpid),true)){UI.rotSel=null;save()}render()});
+document.addEventListener('dragend',()=>{if(UI.rotDrag==null)return;UI.rotDrag=null;document.querySelectorAll('.rot-tbl tr.drop').forEach(x=>x.classList.remove('drop'))});
 document.addEventListener('change',e=>{
   const el=e.target;
   if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();render();return}
