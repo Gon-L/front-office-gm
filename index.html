@@ -3255,6 +3255,67 @@ function extend(p){
   toast(`Extended ${p.name}.`);
   if(o.amt>=18)pressSigning(p,'extend');
 }
+// ---------- negotiation: your own salary, years and option ----------
+// what an offer is worth to him: years near what he wants (older players want security, younger ones don't want to be
+// locked up), a player option is worth about 7% to him, a team option costs about 8%
+function offerWorth(p,amt,yrs,opt){
+  const d=yrs-p.askYrs,old=p.age>=29,ya=d<0?1+d*(old?.07:.04):1+d*(old?.03:-.03);
+  return amt*Math.max(.6,ya)*(opt==='P'?1.07:opt==='T'?.92:1);
+}
+// the least he takes per year on his own terms: winning teams and his own team get a discount, a losing one doesn't,
+// and late in the market he has fewer options
+function negFactors(p,tid){
+  const t=T(tid),gp=t.w+t.l,w=gp?t.w/gp:.5,own=p.rights===tid||p.tid===tid,out=[];
+  if(p.loyal==null)p.loyal=rnd();
+  let f=1-(w-.5)*.25;
+  if(w>=.6)out.push(['good','He likes that you win.']);else if(w<.4)out.push(['bad','Your losing record means no discount.']);
+  if(own){f-=.07*p.loyal;out.push([p.loyal>=.5?'good':'muted',p.loyal>=.5?'He is loyal to your team.':'He knows your team, but loyalty only goes so far.'])}
+  if(p.tid===tid&&moodOf(p)>=75){f-=.03;out.push(['good','He is happy here.'])}
+  if(S.phase==='regular'||S.phase==='freeagency'&&S.faDay>=7){f-=.04;out.push(['good','The market is drying up for him.'])}
+  f+=((p.pid*7919+S.season*31)%9-4)/100; // his own read of his worth
+  return {fl:r1(Math.max(minFor(p),p.ask*Math.min(1,f))),out}; // never more than his asking price
+}
+const negKey=()=>S.phase==='freeagency'?`f${S.season}:${S.faDay}`:S.phase==='regular'?`r${S.season}:${S.day}`:`s${S.season}`;
+const negMaxYrs=(p,tid)=>p.rights===tid||p.tid===tid?5:4;
+const setOpt=(c,o)=>{if((o==='P'||o==='T')&&c.exp>c.s)c.opt=o;else delete c.opt};
+function negState(p){if(!p.neg||p.neg.k!==negKey())p.neg={k:negKey(),n:0,mad:0};return p.neg}
+// can you do these terms at all (cap, exceptions, Bird limits, the owner)?
+function negCheck(p,amt,yrs){
+  const u=S.userTid;
+  if(p.tid===u){const bo=birdOf(p),next=nextYearPayroll(u)+(p.resign==='yes'?0:amt);
+    if(next>ownerLimit())return `Your owner won't approve next season's payroll going to ${money(next)} (limit ${money(ownerLimit())}).`;
+    if(amt>bo.lim+.001&&next>CAP)return `${bo.k} rights only let you pay him up to ${money(bo.lim)} over the cap.`;return ''}
+  const c=canSign(u,{...p,ask:amt,askYrs:yrs});
+  if(!c.ok)return c.why;
+  if(c.yrs&&c.yrs<yrs)return `${c.why} Offer ${c.yrs} year${c.yrs>1?'s':''} or less.`;
+  return '';
+}
+// his answer: yes, a counter at your years and option, or no (twice too low and he stops talking until tomorrow)
+function negotiate(p,amt,yrs,opt){
+  const u=S.userTid,n=negState(p),own=p.rights===u||p.tid===u;
+  if(n.mad>=2||n.n>=3)return {r:'done',why:`${p.name} is done talking for now. Try again ${S.phase==='resign'?'in free agency':'tomorrow'}, or pay his asking price.`};
+  amt=r1(clamp(amt,minFor(p),maxFor(p,own)));yrs=clamp(Math.round(yrs)||1,1,negMaxYrs(p,u));if(yrs<2)opt='';
+  const bad=negCheck(p,amt,yrs);if(bad)return {r:'err',why:bad};
+  n.n++;
+  const {fl}=negFactors(p,u),eff=offerWorth(p,amt,yrs,opt),need=r1(Math.ceil(fl/offerWorth(p,1,yrs,opt)*10)/10),top=maxFor(p,own);
+  if(eff>=fl-.001)return {r:'yes',amt,yrs,opt};
+  if(need>top+.001){n.mad++;return {r:'no',why:`${p.name} won't take ${yrs} year${yrs>1?'s':''}${opt?` with a ${optName(opt)}`:''} at any price. He wants about ${p.askYrs}.`}}
+  if(eff>=fl*.85)return {r:'counter',amt:need,yrs,opt,why:`${p.name} counters: ${yrs} year${yrs>1?'s':''} at ${money(need)} a year${opt?` with the ${optName(opt)}`:''}.`};
+  n.mad++;
+  return {r:'no',why:n.mad>=2?`That's insulting. ${p.name} walks away for now.`:`That's well short. ${p.name} is looking for a lot more on those terms.`};
+}
+// a deal he agreed to: a free agent signs now; one of your expiring players is set to re-sign on these terms
+function negClose(p,amt,yrs,opt){
+  const u=S.userTid;
+  if(p.tid===u){p.ask=amt;p.askYrs=yrs;p.askOpt=opt||'';p.resign='yes';toast(`${p.name} agreed: ${yrs} yr${yrs>1?'s':''} at ${money(amt)}${opt?` with a ${optName(opt)}`:''}. He re-signs when free agency opens.`);return}
+  userSign(p,amt,yrs,opt||'');
+}
+// you sign a free agent; a restricted free agent's team can match your offer sheet
+function userSign(p,amt,yrs,opt){
+  if(p.rfa&&p.rfa.tid!==S.userTid&&aiMatches(p.rfa.tid,p,amt)){matchSign(p.rfa.tid,p,amt,yrs);if(opt!=null)setOpt(p.contract,opt);news(`The ${tname(p.tid)} matched your offer sheet for ${p.name}.`);toast(`The ${T(p.tid).nick} matched your offer sheet.`);return}
+  sign(S.userTid,p,amt,yrs);if(opt!=null)setOpt(p.contract,opt);
+  news(`You signed ${p.name}: ${p.askYrs} yr${p.askYrs>1?'s':''}, ${money(p.contract.aav||p.contract.amt)} per year${p.contract.opt?` (${optName(p.contract.opt)} in ${p.contract.exp})`:''}.`);if(p.contract.amt>=18||pStar()===p)pressSigning(p,'sign');if(p.contract.amt>=15||pStar()===p)ownQ('sign',{name:p.name,amt:p.contract.amt,star:pStar()===p});dmCheck();toast(`Signed ${p.name}.`);
+}
 // AI teams lock up players they want to keep, if the money works. Each call gives each candidate a chance.
 function aiExtensions(chance){
   for(const t of S.teams){
@@ -3286,7 +3347,7 @@ function toFreeAgency(){
     else{const ovrs=roster(p.tid).map(x=>x.ovr).sort((a,b)=>b-a),top8=ovrs[7]||45; // AI teams usually keep their rotation, if the money works
       keep=(p.ovr>=top8?rnd()<.8:p.age<=24&&p.pot>=58?rnd()<.55:false)&&nextYearPayroll(p.tid)+p.ask<TAX+(p.ovr>=ovrs[2]?30:10) // and pay into the tax for a top-3 player
         &&(p.ask<=birdOf(p).lim+.001||nextYearPayroll(p.tid)+p.ask<=CAP)} // over his Bird limit it takes cap space
-    if(keep){if(p.ask>p.contract.amt*1.2&&p.ask>minFor(p)+.001)p.tlock=(S.season+1)*1000+100+DEC15;p.contract=mkC(p.ask,p.askYrs,S.season+1,true,p)}
+    if(keep){if(p.ask>p.contract.amt*1.2&&p.ask>minFor(p)+.001)p.tlock=(S.season+1)*1000+100+DEC15;p.contract=mkC(p.ask,p.askYrs,S.season+1,true,p);if(p.askOpt!=null){setOpt(p.contract,p.askOpt);delete p.askOpt}}
     else{const mine=p.tid===S.userTid,hold=mine&&!p.refuse&&p.resign!=='no',rk=p.contract.rk,o=p.tid;
       // a rookie-scale player gets a qualifying offer: yours unless you let him go, an AI team's if he is worth keeping
       const rfa=rk&&!p.refuse&&(mine?hold:p.ovr>=45||p.pot>=55)?{tid:o,qo:qoOf(p)}:null;
@@ -5053,8 +5114,8 @@ function guidance(){
     case 'resign':{
       const ex=expiring(u);
       return `<h3>Expiring contracts</h3><p class="muted">Bird rights let you re-sign your own players over the cap: Full Bird (3+ seasons with you) up to the max, Early Bird (2 seasons) up to 175% of his salary or 105% of the league average, Non-Bird up to 120%. Above that limit you need cap space next season. Trades keep a player's Bird rights. Players you don't decide on become free agents, but you keep their Bird rights: a cap hold counts against your cap until you re-sign them in free agency or renounce them, and other teams can sign them first. Let go renounces him now. Players finishing a rookie-scale deal get a qualifying offer instead: they become restricted free agents, so you can match any offer sheet another team gives them, and an unsigned one plays a year on the qualifying offer. Next season's commitments: <b class="num">${money(nextYearPayroll(u))}</b>.</p>
-      ${ex.length?`<div class="scroll"><table><thead><tr><th class="l">Player</th><th>Age</th><th>Ovr</th><th>Pot</th><th>Asking</th><th>Yrs</th><th class="l">Rights</th><th></th></tr></thead><tbody>${ex.map(p=>`<tr><td class="l">${esc(p.name)} <span class="muted">${p.pos}</span></td><td>${p.age}</td><td class="ovr">${p.ovr}</td><td>${scoutPot(p)}</td><td>${money(p.ask)}</td><td>${p.askYrs}</td><td class="l">${(b=>`<span title="${b.yrs} season${b.yrs===1?'':'s'} with your team">${b.k}</span>${b.k==='Full Bird'?'':` <span class="muted">up to ${money(b.lim)}</span>`}${p.ask>b.lim+.001?' <span class="pill warn" title="Re-signing him at this price needs cap space next season">Over his limit</span>':''}`)(birdOf(p))}</td><td class="l">${p.resign==='yes'?'<span class="pill good">Re-signing</span> ':''}${p.resign==='no'?'<span class="pill muted">Letting go</span> ':''}${p.resign==null&&!p.refuse?(p.contract.rk?`<span class="pill" title="Restricted free agent: you can match any offer sheet; unsigned, he takes the qualifying offer">Qualifying offer ${money(qoOf(p))}</span> `:'<span class="pill" title="He becomes a free agent, but you keep his Bird rights and a cap hold">Keep rights</span> '):''}${p.refuse?`<span class="pill bad" title="Morale ${moodOf(p)}">Won't re-sign</span> `:`<button class="btn small" data-act="resign" data-arg="${p.pid}">Re-sign</button>`} <button class="btn small" data-act="letgo" data-arg="${p.pid}">Let go</button></td></tr>`).join('')}</tbody></table></div>`:'<p>No contracts are expiring this summer.</p>'}${teamOptsHtml(u)}`;}
-    case 'freeagency':return `<h3>Free agency, day ${S.faDay}</h3><p>Asking prices drop about 5% a day. For the first two weeks, proven players hold out for a real contract (players rated 60+ want at least the mid-level or about 40% of their value). After that they take the best offer out there, often a short "prove it" deal, and rival teams get the first look at it. Rival teams sign players every day, will waive a minimum-salary player to make room for someone good, and keep shopping for 14 days even if you start the season early. Under the cap you can sign anyone who fits; over it, you have one mid-level exception (${money(MLE)}, or ${money(MLE_TP)} above the first apron, or ${money(MLE_ROOM)} once you have used cap space; it can be split), a ${money(BAE)} bi-annual every other season, and minimum deals. The Cap tab shows what is left. Players you sign can't be traded until mid-December. Your own free agents are at the top: you can re-sign them over the cap with Bird rights, but their cap holds count until you do or renounce them. Deals above the mid-level come with yearly raises, and some have a player or team option in the final year. Restricted free agents (RFA) come off rookie deals: an offer sheet you sign can be matched by their team, and your own get offer sheets you can match. You need 13 to 15 players to start the season (you have ${roster(u).length}).</p>`;
+      ${ex.length?`<div class="scroll"><table><thead><tr><th class="l">Player</th><th>Age</th><th>Ovr</th><th>Pot</th><th>Asking</th><th>Yrs</th><th class="l">Rights</th><th></th></tr></thead><tbody>${ex.map(p=>`<tr><td class="l">${esc(p.name)} <span class="muted">${p.pos}</span></td><td>${p.age}</td><td class="ovr">${p.ovr}</td><td>${scoutPot(p)}</td><td>${money(p.ask)}</td><td>${p.askYrs}</td><td class="l">${(b=>`<span title="${b.yrs} season${b.yrs===1?'':'s'} with your team">${b.k}</span>${b.k==='Full Bird'?'':` <span class="muted">up to ${money(b.lim)}</span>`}${p.ask>b.lim+.001?' <span class="pill warn" title="Re-signing him at this price needs cap space next season">Over his limit</span>':''}`)(birdOf(p))}</td><td class="l">${p.resign==='yes'?'<span class="pill good">Re-signing</span> ':''}${p.resign==='no'?'<span class="pill muted">Letting go</span> ':''}${p.resign==null&&!p.refuse?(p.contract.rk?`<span class="pill" title="Restricted free agent: you can match any offer sheet; unsigned, he takes the qualifying offer">Qualifying offer ${money(qoOf(p))}</span> `:'<span class="pill" title="He becomes a free agent, but you keep his Bird rights and a cap hold">Keep rights</span> '):''}${p.refuse?`<span class="pill bad" title="Morale ${moodOf(p)}">Won't re-sign</span> `:`<button class="btn small" data-act="resign" data-arg="${p.pid}">Re-sign</button> <button class="btn small" data-act="neg" data-arg="${p.pid}">Negotiate</button>`} <button class="btn small" data-act="letgo" data-arg="${p.pid}">Let go</button></td></tr>`).join('')}</tbody></table></div>`:'<p>No contracts are expiring this summer.</p>'}${teamOptsHtml(u)}`;}
+    case 'freeagency':return `<h3>Free agency, day ${S.faDay}</h3><p>Asking prices drop about 5% a day. For the first two weeks, proven players hold out for a real contract (players rated 60+ want at least the mid-level or about 40% of their value). After that they take the best offer out there, often a short "prove it" deal, and rival teams get the first look at it. Rival teams sign players every day, will waive a minimum-salary player to make room for someone good, and keep shopping for 14 days even if you start the season early. Under the cap you can sign anyone who fits; over it, you have one mid-level exception (${money(MLE)}, or ${money(MLE_TP)} above the first apron, or ${money(MLE_ROOM)} once you have used cap space; it can be split), a ${money(BAE)} bi-annual every other season, and minimum deals. The Cap tab shows what is left. Players you sign can't be traded until mid-December. Your own free agents are at the top: you can re-sign them over the cap with Bird rights, but their cap holds count until you do or renounce them. Deals above the mid-level come with yearly raises, and some have a player or team option in the final year. Restricted free agents (RFA) come off rookie deals: an offer sheet you sign can be matched by their team, and your own get offer sheets you can match. Negotiate to offer your own salary, years and option: a winning record and a loyal player get you a discount, and lowballing him twice ends the talks for the day. You need 13 to 15 players to start the season (you have ${roster(u).length}).</p>`;
   }
 }
 function renderBox(b=S.lastBox){
@@ -5556,6 +5617,30 @@ function renderDepth(){
    <p class="muted" style="font-size:.85rem">Ranks compare your best healthy player at each position, and your top 8's average in each skill, with the other 29 teams, using the ratings your scouts can see. Links open Trade targets or Free agents with the matching filter.</p></div>`;
 }
 // side by side: two players from anywhere in the league
+function negRead(){const g=UI.neg,a=document.getElementById('negAmt'),y=document.getElementById('negYrs'),o=document.getElementById('negOpt');
+  if(a&&a.value!=='')g.amt=Number(a.value)||g.amt;if(y)g.yrs=Number(y.value);if(o)g.opt=o.value}
+function negSummary(p,g){
+  const own=p.rights===S.userTid||p.tid===S.userTid,amt=r1(clamp(g.amt,minFor(p),maxFor(p,own))),yrs=g.yrs,r=raiseOf(amt,own),b=firstYr(amt,yrs,r),bad=negCheck(p,amt,yrs);
+  return `${money(r1(amt*yrs))} over ${yrs} year${yrs>1?'s':''}${r?`: ${money(b)} the first season, rising ${Math.round(r*100)}% a year`:', flat'}${g.opt&&yrs>1?`, ${optName(g.opt)} in the last year`:''}.${bad?` <span class="bad">${esc(bad)}</span>`:''}`;
+}
+function renderNeg(){
+  const g=UI.neg,p=pById(g.pid);if(!p){UI.neg=null;return ''}
+  const u=S.userTid,own=p.rights===u||p.tid===u,n=negState(p),my=negMaxYrs(p,u),{out}=negFactors(p,u),r=g.res;
+  const left=Math.max(0,3-n.n),done=n.mad>=2||!left;
+  return `<div class="modal-bg" data-act="negClose"><div class="modal" role="dialog" aria-modal="true" aria-label="Negotiate with ${esc(p.name)}" data-act="modal">
+   <div class="spread"><h2>Negotiate</h2><button class="btn" data-act="negClose" aria-label="Close">Close</button></div>
+   <p><b>${plink(p.pid,p.name)}</b> <span class="muted">${p.pos} · ${p.age} · ovr ${p.ovr}</span><br>He asks ${money(p.ask)} a year for ${p.askYrs} year${p.askYrs>1?'s':''}${p.rfa&&p.rfa.tid!==u?`. Restricted: the ${T(p.rfa.tid).nick} can match a deal you agree on`:''}.</p>
+   <p class="muted" style="margin:0">${out.map(([c,t])=>`<span class="${c}">${t}</span>`).join(' ')||'Nothing special pulls him toward you or away.'} More years matter to older players; a player option is worth about 7% to him, a team option costs you about 8%.</p>
+   <div class="row" style="flex-wrap:wrap;gap:.6rem">
+    <label>Salary ($M a year) <input id="negAmt" class="plan-in" type="number" min="${minFor(p)}" max="${maxFor(p,own)}" step="0.1" inputmode="decimal" value="${g.amt}"></label>
+    <label>Years <select id="negYrs">${Array.from({length:my},(_,i)=>i+1).map(y=>`<option value="${y}" ${y===g.yrs?'selected':''}>${y}</option>`).join('')}</select></label>
+    <label>Option <select id="negOpt"><option value="">None</option><option value="P" ${g.opt==='P'?'selected':''}>Player option</option><option value="T" ${g.opt==='T'?'selected':''}>Team option</option></select></label>
+   </div>
+   <p id="negSum" class="muted" style="margin:0">${negSummary(p,g)}</p>
+   ${r&&r.r!=='err'?`<p class="${r.r==='counter'?'warn':'bad'}" style="margin:0"><b>${esc(r.why)}</b></p>`:''}
+   <div class="row" style="flex-wrap:wrap;gap:.5rem"><button class="btn primary" data-act="negOffer" ${done?'disabled':''}>Make offer</button>${r&&r.r==='counter'?`<button class="btn" data-act="negTake">Accept ${money(r.amt)} × ${r.yrs}y</button>`:''}<span class="muted">${done?'No more offers today.':`${left} offer${left>1?'s':''} left today`}</span></div>
+  </div></div>`;
+}
 function renderCompare(){
   const ps=UI.cmp.map(pById).filter(Boolean);if(ps.length<2){UI.cmpOpen=false;return ''}
   const team=p=>p.tid>=0?`${chip(p.tid)} ${esc(T(p.tid).abbr)}`:p.tid===-2?'Prospect':'Free agent';
@@ -6509,7 +6594,7 @@ function renderTradeBuild(){
 function rightsBox(){
   const u=S.userTid,rs=rightsOf(u);if(!rs.length)return '';
   return `<div class="callout" style="padding:.7rem .9rem;border-radius:10px;margin:.6rem 0"><h3 style="margin-top:0">Your free agents</h3><p class="muted" style="font-size:.85rem">You hold their Bird rights, so you can re-sign them over the cap. Their cap holds (${money(holdsOf(u))} in all) count against your cap until you re-sign or renounce them, and any team can sign them first.</p>
-  ${rs.map(p=>{const c=canSign(u,p),b=birdOf(p),sh=(S.sheets||[]).find(x=>x.pid===p.pid);return `<p class="row" style="margin:.3rem 0">${plink(p.pid,p.name)} <span class="muted">${p.pos} · ${p.ovr} · asks ${money(p.ask)} for ${p.askYrs} yr${p.askYrs>1?'s':''} · ${p.rfa?`restricted, qualifying offer ${money(p.rfa.qo)}`:b.k} · hold ${money(holdOf(p))}</span> ${sh?`<b class="warn">Offer sheet from the ${T(sh.tid).nick}: ${sh.yrs} yr${sh.yrs>1?'s':''} at ${money(sh.amt)}, decide by day ${sh.until}</b> <button class="btn small primary" data-act="match" data-arg="${p.pid}">Match</button> <button class="btn small" data-act="nomatch" data-arg="${p.pid}">Let him go</button>`:`<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok?'':'disabled'} title="${esc(c.why)}">Re-sign</button> <button class="btn small" data-act="renounce" data-arg="${p.pid}">Renounce</button>`}</p>`}).join('')}</div>`;
+  ${rs.map(p=>{const c=canSign(u,p),b=birdOf(p),sh=(S.sheets||[]).find(x=>x.pid===p.pid);return `<p class="row" style="margin:.3rem 0">${plink(p.pid,p.name)} <span class="muted">${p.pos} · ${p.ovr} · asks ${money(p.ask)} for ${p.askYrs} yr${p.askYrs>1?'s':''} · ${p.rfa?`restricted, qualifying offer ${money(p.rfa.qo)}`:b.k} · hold ${money(holdOf(p))}</span> ${sh?`<b class="warn">Offer sheet from the ${T(sh.tid).nick}: ${sh.yrs} yr${sh.yrs>1?'s':''} at ${money(sh.amt)}, decide by day ${sh.until}</b> <button class="btn small primary" data-act="match" data-arg="${p.pid}">Match</button> <button class="btn small" data-act="nomatch" data-arg="${p.pid}">Let him go</button>`:`<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok?'':'disabled'} title="${esc(c.why)}">Re-sign</button> <button class="btn small" data-act="neg" data-arg="${p.pid}">Negotiate</button> <button class="btn small" data-act="renounce" data-arg="${p.pid}">Renounce</button>`}</p>`}).join('')}</div>`;
 }
 const faFiltered=fa=>fa.filter(p=>(!UI.faPos.length||UI.faPos.includes(p.pos))&&(!UI.faSkill||viewR(p,UI.faSkill).v>=skillBar(UI.faSkill)));
 function renderFA(){
@@ -6521,7 +6606,7 @@ function renderFA(){
   <div class="row" role="group" aria-label="Position">${POSL.map(x=>`<button class="btn small tog${UI.faPos.includes(x)?' on':''}" data-act="faPos" data-arg="${x}" aria-pressed="${UI.faPos.includes(x)}">${x}</button>`).join('')}</div>
   <div class="row" role="group" aria-label="Strong in"><span class="muted" style="font-size:.85rem">Strong in:</span>${RK.map(k=>`<button class="btn small tog${UI.faSkill===k?' on':''}" data-act="faSkill" data-arg="${k}" aria-pressed="${UI.faSkill===k}" title="${SKILL_NAME[k]}: the league's top quarter">${RLABEL[k]}</button>`).join('')}${UI.faPos.length||UI.faSkill?' <button class="btn small" data-act="faClear">Clear filters</button>':''}</div>
   ${fa.length&&!faFiltered(fa).length?'<p class="muted">No free agents match. Clear a filter.</p>':''}
-  ${fa.length?playerRows(faFiltered(fa).sort((a,b)=>UI.faSkill?viewR(b,UI.faSkill).v-viewR(a,UI.faSkill).v:b.ovr-a.ovr).slice(0,80),{actions:p=>{const c=canSign(S.userTid,p);return `${p.rfa&&p.rfa.tid!==S.userTid?`<span class="pill" title="Restricted free agent: the ${T(p.rfa.tid).nick} can match your offer sheet">RFA · ${T(p.rfa.tid).abbr}</span> `:''}<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok&&canAct?'':'disabled'} title="${esc(c.why)}">Sign ${c.yrs||p.askYrs}y</button>`}}):'<p class="muted">No free agents available.</p>'}</div>`;
+  ${fa.length?playerRows(faFiltered(fa).sort((a,b)=>UI.faSkill?viewR(b,UI.faSkill).v-viewR(a,UI.faSkill).v:b.ovr-a.ovr).slice(0,80),{actions:p=>{const c=canSign(S.userTid,p);return `${p.rfa&&p.rfa.tid!==S.userTid?`<span class="pill" title="Restricted free agent: the ${T(p.rfa.tid).nick} can match your offer sheet">RFA · ${T(p.rfa.tid).abbr}</span> `:''}<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok&&canAct?'':'disabled'} title="${esc(c.why)}">Sign ${c.yrs||p.askYrs}y</button> <button class="btn small" data-act="neg" data-arg="${p.pid}" ${canAct?'':'disabled'} title="Offer your own salary, years and option">Negotiate</button>`}}):'<p class="muted">No free agents available.</p>'}</div>`;
 }
 // combine slots for one prospect, and what they've told you
 function combineBtns(p){
@@ -6658,7 +6743,7 @@ function render(){showTip(null);
   if(S.awNight!=null&&!UI.cer)UI.cer={s:S.awNight,i:0,open:{}};
   if(S.wrapNight!=null&&!UI.wrap)UI.wrap={s:S.wrapNight,i:0};
   if(S.phase==='lottery'&&S.lotto&&!S.lotto.done&&S.wrapNight==null&&UI.lotSeen!==S.lotto.s){UI.lotSeen=S.lotto.s;UI.lot={auto:false,spd:UI.lotSpd||1}} // lottery night opens on its own once a season
-  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.ownShow?renderOwnModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
+  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.neg?renderNeg():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.ownShow?renderOwnModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
   if(UI.offers||UI.tab==='home')UI.offerViewed=Math.max(UI.offerViewed||0,...liveOffers().map(o=>o.id));
   if(S.presser&&(UI.pressShow||UI.tab==='home'))UI.pressViewed=Math.max(UI.pressViewed||0,S.presser.id||0);
   if(UI.tab==='home'||UI.tab==='roster')UI.lrViewed=Math.max(UI.lrViewed||0,S.lr?S.lr.id:0);
@@ -6780,8 +6865,12 @@ document.addEventListener('click',e=>{
     case 'toFA':toFreeAgency();UI.tab='fa';break;
     case 'faday':faDay();break;
     case 'startSeason':startSeason();break;
-    case 'sign':{const p=pById(num),c=canSign(S.userTid,p);if(!c.ok){toast(c.why);break}
-      if(p.rfa&&p.rfa.tid!==S.userTid&&aiMatches(p.rfa.tid,p,p.ask)){matchSign(p.rfa.tid,p,p.ask,p.askYrs);news(`The ${tname(p.tid)} matched your offer sheet for ${p.name}.`);toast(`The ${T(p.tid).nick} matched your offer sheet.`);break}sign(S.userTid,p,p.ask,p.askYrs);news(`You signed ${p.name}: ${p.askYrs} yr${p.askYrs>1?'s':''}, ${money(p.contract.aav||p.contract.amt)} per year${p.contract.opt?` (${optName(p.contract.opt)} in ${p.contract.exp})`:''}.`);if(p.contract.amt>=18||pStar()===p)pressSigning(p,'sign');if(p.contract.amt>=15||pStar()===p)ownQ('sign',{name:p.name,amt:p.contract.amt,star:pStar()===p});dmCheck();toast(`Signed ${p.name}.`);break}
+    case 'sign':{const p=pById(num),c=canSign(S.userTid,p);if(!c.ok){toast(c.why);break}userSign(p,p.ask,p.askYrs);break}
+    case 'neg':{const p=pById(num);UI.neg={pid:num,amt:p.ask,yrs:p.askYrs,opt:'',res:null};break}
+    case 'negClose':UI.neg=null;break;
+    case 'negOffer':{const g=UI.neg,p=pById(g.pid);negRead();const r=negotiate(p,g.amt,g.yrs,g.opt);g.res=r;
+      if(r.r==='yes'){UI.neg=null;negClose(p,r.amt,r.yrs,r.opt)}break}
+    case 'negTake':{const g=UI.neg,p=pById(g.pid),r=g.res;if(!r||r.r!=='counter')break;const bad=negCheck(p,r.amt,r.yrs);if(bad){g.res={r:'err',why:bad};break}UI.neg=null;negClose(p,r.amt,r.yrs,r.opt);break}
     case 'release':{const p=pById(num);if(roster(S.userTid).length<=(S.phase==='regular'?13:0)){toast('You need at least 13 players during the season. Sign someone first.');break}release(p);break}
     case 'sort':if(UI.sort===arg)UI.sortDir*=-1;else{UI.sort=arg;UI.sortDir=arg==='name'?1:-1}break;
     case 'tm':case 'tt':case 'pm':case 'pt':{const s=UI[act];s.has(num)?s.delete(num):s.add(num);break}
@@ -6883,6 +6972,7 @@ document.addEventListener('drop',e=>{if(UI.rotDrag==null)return;const tr=e.targe
 document.addEventListener('dragend',()=>{if(UI.rotDrag==null)return;UI.rotDrag=null;document.querySelectorAll('.rot-tbl tr.drop').forEach(x=>x.classList.remove('drop'))});
 document.addEventListener('change',e=>{
   const el=e.target;
+  if(UI.neg&&['negAmt','negYrs','negOpt'].includes(el.id)){negRead();const s=document.getElementById('negSum'),p=pById(UI.neg.pid);if(s&&p)s.innerHTML=negSummary(p,UI.neg);return}
   if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();render();return}
   if(el.dataset.tf){const f=tfState(),k=el.dataset.tf;f[k]=el.type==='checkbox'?el.checked:el.value.trim();f.n=TF_DEF.n;render();return}
   if(el.dataset.dp){setPlan(pById(Number(el.dataset.dp)),el.value);save();render();return}
