@@ -4007,7 +4007,8 @@ function pickValue(k,mode,sl,tid){
 }
 // NBA "Stepien rule": a team can't be without a first-round pick in two consecutive future drafts
 function stepienIssue(tid,owned){
-  const years=[...new Set(S.picks.map(k=>k.season))].sort((a,b)=>a-b),now=S.picks.filter(k=>k.owner===tid);
+  const y0=['draft','resign'].includes(S.phase)?S.season+1:S.season; // once the draft starts, this year's isn't a future draft
+  const years=[...new Set(S.picks.map(k=>k.season))].filter(y=>y>=y0).sort((a,b)=>a-b),now=S.picks.filter(k=>k.owner===tid);
   const has=y=>owned.some(k=>k.season===y&&k.rd===1),had=y=>now.some(k=>k.season===y&&k.rd===1);
   for(let i=0;i<years.length-1;i++){const y=years[i];
     if(!has(y)&&!has(y+1)&&(had(y)||had(y+1)))return `${tid===S.userTid?'You':T(tid).abbr} would have no first-round pick in ${y} or ${y+1}. Teams can't trade away firsts in back-to-back future drafts (the Stepien rule).`;}
@@ -4076,13 +4077,14 @@ function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null,X=0){
   const outK=r1(mp.reduce((s,p)=>s+tAmt(p),0)),innK=r1(tp.reduce((s,p)=>s+tAmt(p),0)),tpeUse=[];
   const lim=S.phase==='regular'?[13,15]:[10,17];
   const chk=(tid,give,get,label)=>{
-    const after=r1(payroll(tid)-give+get),lim=matchLimit(give,after),you=label==='You',nOut=you?mp.length:tp.length,hard=hardOf(tid);
+    const after=r1(payroll(tid)-give+get),ml=matchLimit(give,after),you=label==='You',nOut=you?mp.length:tp.length,hard=hardOf(tid);
     if(after>APRON2&&get>0&&nOut>1)reasons.push(`${you?'You':label} would be above the ${money(APRON2)} second apron, where teams can't combine players' salaries to take one back. Send one player for the incoming salary.`);
     if(hard&&after>hard&&get>give)reasons.push(`${you?'You are':label+' is'} hard-capped at ${money(hard)} this season after ${exOf(tid).hardBy}. This deal would reach ${money(after)}.`);
-    if(after>CAP&&get>lim){const x=after<=APRON1?tpeFit(tid,r1(get-give)):null;if(x)tpeUse.push({tid,amt:r1(get-give),left:x.amt});else reasons.push(`${label} would be over the cap after this deal, so ${label==='You'?'you':'they'} can take back at most ${money(lim)} for ${money(give)} sent out${after>APRON1?' (above the apron: no more than you send)':''}. Incoming: ${money(get)}.${exOf(tid).hard||after>APRON1||!tpesOf(tid).length?'':` ${tpesOf(tid).length>1?'Their':'The'} traded player exception${tpesOf(tid).length>1?'s are':' is'} too small (${tpesOf(tid).map(e=>money(e.amt)).join(', ')}).`}`)}
-    const n=roster(tid).length-(label==='You'?mp.length:tp.length)+(label==='You'?tp.length:mp.length);
-    if(n>lim[1])reasons.push(`${label==='You'?'Your':T(otherTid).abbr} roster would have ${n} players (max ${lim[1]}).`);
-    if(n<lim[0])reasons.push(`${label==='You'?'Your':T(otherTid).abbr} roster would drop to ${n} players (min ${lim[0]}).`);
+    if(after>CAP&&get>ml){const x=after<=APRON1?tpeFit(tid,r1(get-give)):null;if(x)tpeUse.push({tid,amt:r1(get-give),left:x.amt});else reasons.push(`${label} would be over the cap after this deal, so ${label==='You'?'you':'they'} can take back at most ${money(ml)} for ${money(give)} sent out${after>APRON1?' (above the apron: no more than you send)':''}. Incoming: ${money(get)}.${exOf(tid).hard||after>APRON1||!tpesOf(tid).length?'':` ${tpesOf(tid).length>1?'Their':'The'} traded player exception${tpesOf(tid).length>1?'s are':' is'} too small (${tpesOf(tid).map(e=>money(e.amt)).join(', ')}).`}`)}
+    const n0=roster(tid).length,n=n0-(label==='You'?mp.length:tp.length)+(label==='You'?tp.length:mp.length);
+    // a roster already outside the limits can still trade, as long as the deal doesn't make it worse
+    if(n>lim[1]&&n>n0)reasons.push(`${label==='You'?'Your':T(otherTid).abbr} roster would have ${n} players (max ${lim[1]}).`);
+    if(n<lim[0]&&n<n0)reasons.push(`${label==='You'?'Your':T(otherTid).abbr} roster would drop to ${n} players (min ${lim[0]}).`);
     return after;
   };
   const youAfter=chk(S.userTid,out,innK,'You'),themAfter=chk(otherTid,inn,outK,T(otherTid).abbr);
@@ -4139,7 +4141,7 @@ function doTrade(tid,mine,theirs,mk,tk,X=0){
   if(cash){const [from,to]=cash>0?[S.userTid,tid]:[tid,S.userTid],c=Math.abs(cash),add=(t,k)=>{const m=t.cash=t.cash||{},y=m[S.season]=m[S.season]||{};y[k]=r1((y[k]||0)+c)};
     add(T(from),'out');add(T(to),'in');T(from).biz.fin.exp.cash=r1((T(from).biz.fin.exp.cash||0)+c);T(to).biz.fin.rev.cash=r1((T(to).biz.fin.rev.cash||0)+c)}
   const gotNames=tradeNames(theirs,tk);
-  mine.forEach(pid=>{const p=pById(pid);p.tid=tid;p.agg=aggUntil();newTeamMood(p)});theirs.forEach(pid=>{const p=pById(pid);p.tid=S.userTid;p.agg=aggUntil();newTeamMood(p)});
+  mine.forEach(pid=>{const p=pById(pid);p.tid=tid;p.agg=aggUntil();p.acqTick=S.tick;newTeamMood(p)});theirs.forEach(pid=>{const p=pById(pid);p.tid=S.userTid;p.agg=aggUntil();p.acqTick=S.tick;newTeamMood(p)});
   mk.forEach(id=>pickById(id).owner=tid);tk.forEach(id=>pickById(id).owner=S.userTid);
   S.offers=S.offers.filter(o=>o.tm.every(id=>pById(id)&&pById(id).tid===S.userTid)&&o.tt.every(id=>pById(id)&&pById(id).tid===o.tid));
   S.pressMem.trades++;
@@ -7524,6 +7526,12 @@ if(!S.rec)S.rec=newRec(S.season); // saves from before the records book
 if(!S.cupHist)S.cupHist=[];
 if(!S.pressMem)S.pressMem=newPressMem();
 S.players.filter(p=>p.tid===-2).forEach(decorateProspect); // prospects from before backgrounds
+if(!S.picks){ // saves from before pick trading: give every team its own picks
+  S.picks=[];S.nextPickId=1;
+  const first=(S.phase==='draft'||S.phase==='resign')?S.season+1:S.season;
+  for(let y=0;y<PICK_YRS;y++)addPicks(first+y);
+  save();
+}
 syncFc(); // saves from before future classes
 if(S.presser&&S.presser.prio==null)S.presser=null; // old-format question from before the press rewrite
 if(!S.riv){S.offers=[];S.nextOfferId=1;S.tick=0;S.presser=null;S.hof=[];seedRivalries()} // saves from before media
@@ -7541,12 +7549,6 @@ if(S.userTid!=null&&S.owner){const o=S.owner,id=T(S.userTid).own;if(o.nrev==null
 if(S.userTid!=null&&!S.owner)newOwner(S.userTid);
 if(S.owner&&!S.owner.deal){gmDeal();if(!career().jobs.length)career().jobs.push({tid:S.userTid,from:S.owner.deal.s0,owner:ownName(),sal:S.owner.deal.sal})}
 if(S.lotto&&!S.lotto.b){S.lotto.b=S.lotto.seeds.map((_,i)=>OLD_W[i]||5);S.lotto.old=1;S.lotto.rel=[];S.lotto.bar=[];S.lotto.grp=[]}
-if(!S.picks){ // saves from before pick trading: give every team its own picks
-  S.picks=[];S.nextPickId=1;
-  const first=(S.phase==='draft'||S.phase==='resign')?S.season+1:S.season;
-  for(let y=0;y<PICK_YRS;y++)addPicks(first+y);
-  save();
-}
 render();
 </script>
 
