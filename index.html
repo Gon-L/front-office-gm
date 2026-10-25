@@ -193,6 +193,7 @@ td.acts .btn,td.acts .pill{margin-block:.1rem}
 .cup-groups table td,.cup-groups table th{padding:.25rem .4rem}
 tr.adv td:first-child{box-shadow:inset 3px 0 var(--good)}
 .bracket.cup{grid-template-columns:repeat(3,minmax(170px,1fr));min-width:540px}
+.bracket.pi{grid-template-columns:repeat(3,minmax(150px,1fr));min-width:480px;margin-bottom:.4rem}
 .series .story{display:block;font-size:.78rem;color:var(--muted)}
 .plan-in{width:8em;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:.4rem .5rem;border-radius:6px;font:inherit}
 /* award races, awards night and lottery night */
@@ -636,7 +637,8 @@ function newLeague(){
     (DEAD0[t.abbr]||[]).forEach(d=>t.dead.push({...d}));
   }
   FA0.split(';').forEach(line=>{const p=realPlayer(line,-1);p.contract=null;p.ask=askFloor(p);p.askYrs=p.age<=26?2:1;S.players.push(p)});
-  for(let y=0;y<4;y++)addPicks(S.season+y);
+  for(let y=0;y<PICK_YRS;y++)addPicks(S.season+y);
+  seedRealPicks();
   setupStaff();seedOwners();
   setupBusiness();
   seedRivalries();
@@ -1790,7 +1792,7 @@ function goalStatus(gl){
   const t=T(S.userTid),fin=finTotal(t.biz.fin),gp=t.w+t.l;
   switch(gl.k){
     case 'wins':return [t.w>=gl.t,`${t.w}-${t.l}${gp&&gp<82?`, on pace for ${Math.round(t.w/gp*82)}`:''}`];
-    case 'playoffs':{const seeded=S.po&&S.po.seeded.includes(S.userTid),rank=confStand(t.conf).indexOf(t)+1;return [seeded,S.po?(seeded?'In the playoffs':'Missed'):`${rank}${['th','st','nd','rd'][rank%10<4&&(rank<11||rank>13)?rank%10:0]} in the conference`]}
+    case 'playoffs':{const seeded=S.po&&S.po.seeded.includes(S.userTid),rank=confStand(t.conf).indexOf(t)+1;return [seeded,S.po?(seeded?'In the playoffs':piOn()&&piGame(S.userTid)?'In the play-in':'Missed'):`${rank}${['th','st','nd','rd'][rank%10<4&&(rank<11||rank>13)?rank%10:0]} in the conference`]}
     case 'round2':{const r=S.po?roundReached(S.userTid):null;return [!!r&&!['Missed playoffs','First round'].includes(r),r||'Season in progress']}
     case 'profit':case 'noloss':return [fin.profit>=gl.t,`${money(fin.profit)} so far`];
     case 'tax':return [t.biz.fin.exp.tax===0&&payroll(S.userTid)<=TAX,`Payroll ${money(payroll(S.userTid))}`];
@@ -2908,13 +2910,59 @@ function startPlayoffs(){
   giveAwards();
   seasonRecords();
   chargeTax();chargeFloor();
-  const mk=(s,conf)=>[[0,7],[3,4],[1,6],[2,5]].map(([i,j])=>({a:s[i].tid,b:s[j].tid,sa:i+1,sb:j+1,wa:0,wb:0,conf}));
-  const E=confStand('E'),W=confStand('W');
-  S.po={rounds:[[...mk(E,'E'),...mk(W,'W')]],champ:null,seeded:[...E.slice(0,8),...W.slice(0,8)].map(t=>t.tid)};
-  checkPromises(true);
+  const E=confStand('E').map(t=>t.tid),W=confStand('W').map(t=>t.tid);
+  S.po={pi:newPlayIn(E,W),rounds:[],champ:null,seeded:[...E.slice(0,6),...W.slice(0,6)]};
   S.phase='playoffs';
+  const u=S.userTid,s=(T(u).conf==='E'?E:W).indexOf(u)+1;
+  news(s<=6?`${tname(u)} clinched the ${s} seed in the ${T(u).conf==='E'?'East':'West'}. The play-in decides the 7 and 8 seeds.`
+    :s<=10?`${tname(u)} finished ${ordinal(s)} in the ${T(u).conf==='E'?'East':'West'} and go to the play-in${s<=8?': win one of two games to make the playoffs':': two wins in a row, or the season is over'}.`
+    :`${tname(u)} missed the playoffs.`);
+}
+// ---------- play-in ----------
+// seeds 7-10 in each conference: 7 v 8 (the winner is the 7 seed) and 9 v 10 (the loser is out), then the 7v8 loser
+// hosts the 9v10 winner for the 8 seed. Single games, at the higher seed
+const PI_NAME={'78':'7 vs 8','910':'9 vs 10','8':'for the 8 seed'};
+function newPlayIn(E,W){
+  const g=[];
+  for(const [s,conf] of [[E,'E'],[W,'W']])g.push({k:'78',a:s[6],b:s[7],sa:7,sb:8,conf,d:0,w:null},{k:'910',a:s[8],b:s[9],sa:9,sb:10,conf,d:0,w:null});
+  return {d:0,g,done:false,seeds:{E,W}};
+}
+const piOn=()=>!!(S.po&&S.po.pi&&!S.po.pi.done);
+const piTag=g=>`Play-in, ${g.conf==='E'?'East':'West'} ${PI_NAME[g.k]}`;
+const piLose=g=>g.w===g.a?g.b:g.a;
+const piGame=(tid,today)=>S.po&&S.po.pi&&S.po.pi.g.find(g=>(g.a===tid||g.b===tid)&&(!today||g.d===S.po.pi.d&&g.w==null));
+function simPlayIn(){
+  const P=S.po.pi,u=S.userTid;
+  S.poDays=(S.poDays||0)+1;if(S.poDays%4===0)scoutWeek();
+  for(const g of P.g.filter(g=>g.d===P.d&&g.w==null)){
+    const r=simGame(g.a,g.b,false,`${S.season} play-in · ${piTag(g)}`);
+    g.w=r.hs>r.as?g.a:g.b;g.sc=[r.hs,r.as];
+    T(g.a).biz.fin.rev.playoffs+=gate(g.a,1.2).rev;
+    const L=piLose(g),hi=Math.max(r.hs,r.as),lo=Math.min(r.hs,r.as);
+    hypeBump(g.w,1);
+    if(g.w===u)news(g.k==='78'?`You beat the ${T(L).nick} ${hi}-${lo} in the play-in and take the 7 seed.`:g.k==='8'?`You beat the ${T(L).nick} ${hi}-${lo} and take the 8 seed. You're in the playoffs.`:`You beat the ${T(L).nick} ${hi}-${lo} in the play-in. One more win gets you the 8 seed.`);
+    else if(L===u)news(g.k==='78'?`You lost to the ${T(g.w).nick} ${hi}-${lo} in the play-in. One more chance: win the next game for the 8 seed.`:`You lost to the ${T(g.w).nick} ${hi}-${lo} in the play-in. The season is over.`);
+  }
+  if(P.d===0){
+    for(const conf of ['E','W']){
+      const a=P.g.find(g=>g.conf===conf&&g.k==='78'),b=P.g.find(g=>g.conf===conf&&g.k==='910'),A=piLose(a);
+      P.g.push({k:'8',a:A,b:b.w,sa:A===a.a?a.sa:a.sb,sb:b.w===b.a?b.sa:b.sb,conf,d:1,w:null});
+    }
+    P.d=1;
+  }else finishPlayIn();
+}
+function finishPlayIn(){
+  const P=S.po.pi;P.done=true;
+  const sd={};
+  for(const conf of ['E','W']){const a=P.g.find(g=>g.conf===conf&&g.k==='78'),f=P.g.find(g=>g.conf===conf&&g.k==='8');sd[conf]=[...P.seeds[conf].slice(0,6),a.w,f.w]}
+  const mk=(s,conf)=>[[0,7],[3,4],[1,6],[2,5]].map(([i,j])=>({a:s[i],b:s[j],sa:i+1,sb:j+1,wa:0,wb:0,conf}));
+  S.po.rounds=[[...mk(sd.E,'E'),...mk(sd.W,'W')]];
+  S.po.seeded=[...sd.E,...sd.W];
+  news(`Play-in: the ${T(sd.E[6]).nick} and ${T(sd.E[7]).nick} take the East's 7 and 8 seeds; the ${T(sd.W[6]).nick} and ${T(sd.W[7]).nick} take the West's.`);
+  checkPromises(true);
   const u=S.po.seeded.indexOf(S.userTid);
-  news(u>=0?`${tname(S.userTid)} clinched the ${u%8+1} seed in the ${T(S.userTid).conf==='E'?'East':'West'}.`:`${tname(S.userTid)} missed the playoffs.`);
+  if(u>=0&&u%8<6)news(`${tname(S.userTid)} open the playoffs as the ${u%8+1} seed in the ${T(S.userTid).conf==='E'?'East':'West'}.`);
+  else if(u<0&&!piGame(S.userTid))news(`${tname(S.userTid)} missed the playoffs.`);
   if(S.owner)ownFire(u>=0?'clinch':'missed');
 }
 const sDone=s=>s.wa===4||s.wb===4;
@@ -2922,6 +2970,7 @@ const sWin=s=>s.wa===4?s.a:s.b;
 function simPlayoffDay(){noting(simPlayoffDay0)}
 function simPlayoffDay0(){
   if(S.phase!=='playoffs')return;
+  if(piOn()){simPlayIn();return}
   S.poDays=(S.poDays||0)+1;if(S.poDays%4===0)scoutWeek(); // scouts keep working through the playoffs
   const cur=S.po.rounds[S.po.rounds.length-1],rd=S.po.rounds.length-1,u=S.userTid;
   for(const s of cur){
@@ -3142,19 +3191,70 @@ function devOutlook(p){
 // ---------- draft ----------
 // the lottery is drawn when the Finals end and revealed on lottery night; the order is fixed before the show starts
 function makeDraftOrder(){
-  const inPO=new Set(S.po.seeded),coin=S.teams.map(()=>rnd()); // tied records go to a coin flip, like the NBA
+  const coin=S.teams.map(()=>rnd()); // tied records go to a coin flip, like the NBA
   const worst=S.teams.slice().sort((a,b)=>pct(a)-pct(b)||coin[a.tid]-coin[b.tid]).map(t=>t.tid);
-  const lot=worst.filter(t=>!inPO.has(t)),odds=LOTTO_W;
-  const pool=lot.map((tid,i)=>({tid,w:odds[i]||5})),top=[];
-  for(let k=0;k<4;k++){const w=wpick(pool,x=>x.w);top.push(w.tid);pool.splice(pool.indexOf(w),1)}
-  const first=[...top,...lot.filter(t=>!top.includes(t)),...worst.filter(t=>inPO.has(t))];
-  const orig=[...first,...worst];
+  const grp=lotGroups(),lot=worst.filter(t=>grp[t]),rest=worst.filter(t=>!grp[t]);
+  const relg=lot.filter(t=>grp[t]===3).slice(0,3); // the three worst records
+  const b=lot.map(t=>grp[t]===3&&relg.includes(t)?2:grp[t]),rel=lot.map(t=>relg.includes(t)),bar=lot.map(t=>lotBar(t,S.season));
+  const order=lotDraw(b,rel,bar,false,rnd).map(i=>lot[i]);
+  const first=[...order,...rest];
+  const orig=[...first,...order.slice().reverse(),...rest]; // the first 16 of the second round mirror the lottery
   const owner=(o,rd)=>{const k=S.picks.find(x=>x.season===S.season&&x.rd===rd&&x.orig===o);return k?k.owner:o};
   const cons=Object.fromEntries(prospects().sort((a,b)=>consensusScore(b)-consensusScore(a)).map((p,i)=>[p.pid,i+1])); // the media's final big board
   S.draft={order:orig.map((o,i)=>owner(o,i<30?1:2)),orig,idx:0,picks:[],cons};
   const flips=[];for(let i=0;i+1<lot.length;i++){const a=T(lot[i]),b=T(lot[i+1]);if(a.w===b.w&&a.l===b.l)flips.push([lot[i],lot[i+1]])}
-  S.lotto={s:S.season,seeds:lot,order:first.slice(0,lot.length),rec:lot.map(t=>[T(t).w,T(t).l]),flips,at:0,done:false};
+  S.ownSlot=S.ownSlot||{};ownSlots(S.season-1);S.ownSlot[S.season]=Object.fromEntries(first.map((t,i)=>[t,i+1]));
+  for(const y of Object.keys(S.ownSlot))if(+y<S.season-2)delete S.ownSlot[y];
+  S.lotto={s:S.season,seeds:lot,order,rec:lot.map(t=>[T(t).w,T(t).l]),flips,b,rel,bar,grp:lot.map(t=>grp[t]),at:0,done:false};
 }
+// ---------- the 3-2-1 lottery (NBA, from the 2027 draft) ----------
+// 16 teams: everyone but the top 6 seeds and the 7 v 8 play-in winners. 37 balls: 3 for the teams that missed the
+// play-in, except the three worst records, who are "relegated" to 2 and can't fall below No. 12; 2 for the 9 and 10
+// seeds; 1 for the 7 v 8 losers. All 16 picks are drawn. A team's own pick can't be No. 1 in back-to-back drafts or
+// top 5 three drafts in a row (2025 and 2026 count); a barred pick moves to the first slot it can hold
+const REL_FLOOR=12,LOT_N=16;
+// the lottery group of each team: 3 = missed the play-in, 2 = 9 or 10 seed, 1 = lost the 7 v 8 game
+function lotGroups(){
+  const P=S.po&&S.po.pi,m={};
+  for(const conf of ['E','W']){
+    const s=P&&P.seeds?P.seeds[conf]:confStand(conf).map(t=>t.tid);
+    s.forEach((t,i)=>{if(i>=10)m[t]=3;else if(i>=8)m[t]=2});
+    const g=P&&P.g.find(g=>g.conf===conf&&g.k==='78');
+    m[g&&g.w!=null?piLose(g):s[7]]=1; // saves from before the play-in: the 8 seed stands in
+  }
+  return m;
+}
+// where each team's own first landed in the real 2025 and 2026 drafts (the top five), for the repeat limits
+const OWN0={2025:{DAL:1,SAS:2,PHI:3,CHA:4,UTA:5},2026:{WAS:1,UTA:2,MEM:3,CHI:4,IND:5}};
+function ownSlots(y){
+  S.ownSlot=S.ownSlot||{};
+  if(!S.ownSlot[y]&&OWN0[y]){const m={};for(const [a,s] of Object.entries(OWN0[y])){const t=S.teams.find(x=>x.abbr===a);if(t)m[t.tid]=s}S.ownSlot[y]=m}
+  return S.ownSlot[y]||{};
+}
+// the best slot this team's own pick can't take this year: 1 after a No. 1 pick, 5 after two straight top-5 picks
+function lotBar(tid,y){const a=ownSlots(y-1)[tid],b=ownSlots(y-2)[tid];return a&&b&&a<=5&&b<=5?5:a===1?1:0}
+const lotIdx=(pool,b,r)=>{let x=r()*pool.reduce((s,i)=>s+b[i],0),j=0;for(;j<pool.length-1;j++){x-=b[pool[j]];if(x<=0)break}return j};
+// one draw over the lottery teams in record order (b = balls, rel = relegated, bar = barred slots); old = the pre-2027
+// lottery (four picks drawn, the rest by record), for saves that drew under it
+function lotDraw(b,rel,bar,old,r=Math.random){
+  const n=b.length,pool=[...Array(n).keys()],out=[];
+  if(old){for(let d=0;d<4&&pool.length;d++)out.push(pool.splice(lotIdx(pool,b,r),1)[0]);return out.concat(pool)}
+  for(let s=1;s<=n;s++){
+    const rl=pool.filter(i=>rel[i]);
+    if(rl.length&&rl.length>=REL_FLOOR+1-s){out.push(rl[0]);pool.splice(pool.indexOf(rl[0]),1);continue} // the No. 12 floor
+    out.push(pool.splice(lotIdx(pool,b,r),1)[0]);
+  }
+  for(let i=0;i<n;i++)if(bar[i]){const at=out.indexOf(i);if(at<bar[i]){out.splice(at,1);out.splice(bar[i],0,i)}}
+  return out;
+}
+// chance of each final slot (columns 1..n) for each lottery team, from simulated draws
+function lotSim(b,rel,bar,old,N=20000){
+  const n=b.length,t=Array.from({length:n},()=>new Array(n+1).fill(0));
+  for(let k=0;k<N;k++)lotDraw(b,rel,bar,old).forEach((i,s)=>t[i][s+1]++);
+  return t.map(row=>row.map(c=>c/N));
+}
+let LOTC=null;
+function lotTab(L){if(!LOTC||LOTC.L!==L)LOTC={L,t:lotSim(L.b,L.rel||[],L.bar||[],!!L.old)};return LOTC.t}
 // what lottery night has shown after `at` steps: one pick at a time from the bottom, then the final two, then No. 1
 function lottoShown(L,at){
   const n=L.order.length,vis=new Set();
@@ -3163,7 +3263,8 @@ function lottoShown(L,at){
   return vis;
 }
 const lottoSeed=(L,t)=>L.seeds.indexOf(t)+1,lottoSlot=(L,t)=>L.order.indexOf(t)+1;
-const lottoChance=(L,t)=>lottoSlot(L,t)===1?LOTTO_W[lottoSeed(L,t)-1]/1000:lottoTable()[lottoSeed(L,t)-1][lottoSlot(L,t)];
+const lottoChance=(L,t)=>lotTab(L)[lottoSeed(L,t)-1][lottoSlot(L,t)];
+const lotOdds1=(L,i)=>lotTab(L)[i][1],lotTop5=(L,i)=>lotTab(L)[i].slice(1,6).reduce((s,p)=>s+p,0);
 const pctTxt=p=>p>=.095?Math.round(p*100)+'%':(p*100).toFixed(1)+'%';
 function lottoDone(){
   const L=S.lotto;if(!L||L.done)return;L.done=true;L.at=L.order.length;
@@ -3175,9 +3276,9 @@ function lottoDone(){
     if(slot(t)<=4&&seed(t)>=5)hypeBump(t,3);else if(seed(t)<=4&&slot(t)>4)hypeBump(t,-2); // fans feel a jump or a fall
   }
   S.lottoHist=S.lottoHist||[];
-  S.lottoHist.unshift({s:L.s,tid:win,seed:seed(win),p:LOTTO_W[seed(win)-1]/1000,jump});
+  S.lottoHist.unshift({s:L.s,tid:win,seed:seed(win),p:Math.round(lotOdds1(L,seed(win)-1)*1000)/1000,jump});
   const mine=S.draft.order.map((t,i)=>t===u?i+1:0).filter(Boolean),own=L.seeds.indexOf(u);
-  news(`Draft lottery: the ${tname(win)} won the first pick from the No. ${seed(win)} spot (${pctTxt(LOTTO_W[seed(win)-1]/1000)} odds).`+
+  news(`Draft lottery: the ${tname(win)} won the first pick from the No. ${seed(win)} spot (${pctTxt(lotOdds1(L,seed(win)-1))} odds).`+
     (jump&&jump.tid!==win&&jump.from-jump.to>=3?` The ${T(jump.tid).nick} jumped from No. ${jump.from} to No. ${jump.to}.`:'')+
     (own>=0&&slot(u)<own+1?` Your own pick moved up from ${own+1} to ${slot(u)}.`:'')+(mine.length?` Your picks: ${mine.join(', ')}.`:' You have no picks this year.'));
   // your best lottery pick decides the question
@@ -3640,7 +3741,7 @@ function startSeason(){
   setGoals();if(S.owner){if(S.owner.plan.pending&&!(S.owner.msg&&S.owner.msg.k==='plan'))ownFire('plan',{});else if(!S.owner.plan.pending)ownFire('season')}
   S.players.forEach(p=>{p.st=newStats();delete p.delta});
   S.phase='regular';S.lastBox=null;S.po=null;S.draft=null;
-  fcSummer();genDraftClass();makeSchedule();addPicks(S.season+3);syncFc();
+  fcSummer();genDraftClass();makeSchedule();for(let y=1;y<PICK_YRS;y++)addPicks(S.season+y);syncFc();
   news(`The ${S.season} season tipped off.`);outlookNews();
   for(const k in S.riv)S.riv[k]=r1(S.riv[k]*.75); // old grudges cool off
   S.teams.forEach(t=>t.streak=0);S.aiTrades=0;S.pressMem.trades=0;
@@ -3687,12 +3788,108 @@ function addPicks(season){
   S.teams.forEach(t=>{for(const rd of [1,2])S.picks.push({id:S.nextPickId++,season,rd,orig:t.tid,owner:t.tid})});
 }
 const pickById=id=>S.picks.find(k=>k.id===id);
-const pickLabel=k=>`${k.season} ${k.rd===1?'1st':'2nd'} (${T(k.orig).abbr}${k.prot?`, top-${k.prot} protected`:''})`;
+const protTxt=k=>k.rd===1?`top-${k.prot} protected`:`protected ${31}-${k.prot}`;
+const pickLabel=k=>`${k.season} ${k.rd===1?'1st':'2nd'} (${T(k.orig).abbr}${k.prot?', '+protTxt(k):''}${k.pl?', '+k.pl:''})`;
+// ---------- real pick ownership (new leagues) ----------
+// teams trade picks up to seven drafts out, like the NBA
+const PICK_YRS=7;
+// every pick traded before the 2026-27 season, from RealGM's future draft pick records (October 2026).
+// "27.1 PHX>HOU": PHX's 2027 1st belongs to HOU. pN: protected (a first in the top N stays with the giver; a second
+// numbered N or better), rA,B: the protection rolls over to the next drafts at top-A, top-B, fb: picks the holder
+// gets if it never conveys (none = the obligation ends), alt: who gets it when protected instead of the giver,
+// from: the giver if not the original team. A firsts with no r or fb roll over one year, unprotected.
+// "27.1 HOU<>BKN": HOU can swap firsts with BKN (pN: not if BKN's pick is in the top N). "27.2 BOS,ORL>UTA,PHX": the better of the two to UTA, the worse to
+// PHX (a pool: the picks in order of slot go to the teams in order). "28.1 *UCLA": a swap chain settled by PICK_FN.
+// A few multi-team chains and conditional seconds are simplified.
+const REAL_PICKS=`
+27.1 ATL>SAS;27.1 NYK>BKN;27.1 PHX>HOU;27.1 LAL>MEM p4 fb:LAL27.2;27.1 DAL>CHA p2 fb:MIA28.2;27.1 MIA>CHA p14;
+27.1 DEN>OKC p5 r5,5 fb:DEN29.2;27.1 SAS>OKC p16 alt:SAC fb:SAC27.2,CHA27.2;27.1 CLE,UTA,MIN>MEM,UTA,PHX;27.1 HOU<>BKN;
+27.1 *NOPMIL;27.1 *OKCLAC;
+27.2 BOS,ORL>UTA,PHX;27.2 BKN,DAL>WAS,DET;27.2 CHI>DAL;27.2 CLE>CHI;27.2 DEN>UTA;27.2 LAC>UTA;27.2 MIL>DET;
+27.2 GSW,PHX>PHI,WAS;27.2 MEM>CHA;27.2 NOP,POR>CHA,POR;27.2 CHA>SAC;27.2 UTA>IND;27.2 WAS>NYK;27.2 MIN>POR;
+27.2 OKC,HOU,IND,MIA,SAS>PHI,NOP,NYK,SAS,MIA;27.2 LAL>BKN;
+28.1 ORL>POR;28.1 LAC>BOS p16 from:PHI fb:none;28.1 OKC<>DAL;28.1 CHA<>MIN;28.1 SAS<>BOS p1;28.1 *UCLA;28.1 *BKN28;
+28.2 GSW,MIL,OKC>BOS,PHI,PHI;28.2 ATL>BKN;28.2 MEM>BKN;28.2 BOS>NYK p45;28.2 CHI,IND,PHX>CHI,IND,NYK;
+28.2 CHA,LAC>CHA,DET;28.2 MIA>DET;28.2 NYK>DET;28.2 DET>PHI p55;28.2 DAL>LAC;28.2 DEN>WAS p33;28.2 MIN>DEN;
+28.2 LAL,WAS>ORL,WAS;28.2 HOU>CHA;28.2 ORL>CHA;28.2 CLE>UTA;28.2 UTA>OKC;28.2 NOP>SAS;28.2 SAC>POR;
+29.1 NYK>BKN;29.1 IND>LAC;29.1 LAL>DAL;29.1 DEN>OKC p5 r5 fb:DEN30.2;29.1 PHI<>LAC p3;29.1 MEM<>ORL p2;
+29.1 HOU,DAL,PHX>HOU,HOU,BKN;29.1 POR,BOS,MIL>POR,WAS,POR;29.1 *UTA29;
+29.2 ATL,MIA>CHA,OKC;29.2 CLE>ATL;29.2 BOS>OKC;29.2 DAL>BKN;29.2 GSW>BKN;29.2 MEM>BKN;29.2 HOU>DAL;29.2 DEN>CHA;
+29.2 POR>MEM;29.2 PHX>NYK;29.2 SAC>NYK;29.2 LAL>WAS;29.2 DET,MIL,NYK>DET,DET,CHI;29.2 IND,WAS>IND,POR;29.2 LAC>SAS;
+29.2 NOP>SAS;
+30.1 GSW>MEM p20 fb:GSW30.2;30.1 ORL>MEM;30.1 UTA<>LAL;30.1 *WAS30;30.1 *MIA30;30.1 *SAS30;
+30.2 NYK>ATL;30.2 ATL>OKC;30.2 CHA>BOS p55;30.2 PHX,POR,WAS>BOS,PHI,WAS;30.2 BOS>BKN;30.2 DAL>BKN;30.2 LAL>BKN;
+30.2 CLE>SAS;30.2 DEN,HOU,MIA>MEM,OKC,OKC;30.2 MEM>MIN p50;30.2 MIN>OKC;30.2 MIL>ORL;30.2 ORL,NOP>ORL,NOP;
+30.2 LAC,UTA>CHA,UTA;30.2 TOR>LAC;30.2 CHI,IND>CHI,IND;
+31.1 PHI>BOS;31.1 NYK>BKN;31.1 LAL>UTA;31.1 PHX>MEM;31.1 MIA>MIL;31.1 MIN>SAC;31.1 TOR>LAC;31.1 SAS<>SAC;
+31.2 HOU>BOS p55;31.2 BOS,CLE>UTA,BOS;31.2 MIL>CHA;31.2 PHX>CHA;31.2 DEN>CHI;31.2 MIN,GSW>CHI,DET;31.2 NYK>CHI;
+31.2 SAC>DEN;31.2 DAL>DET;31.2 DET>OKC;31.2 IND,MIA,MEM>WAS,MEM,IND;31.2 TOR>NOP;31.2 ORL,NOP>ORL,OKC;31.2 WAS>LAL;
+31.2 LAL>BKN;
+32.1 DEN>BKN;
+32.2 ATL,LAL>ATL,OKC;32.2 DEN>BKN;32.2 MIA>BKN;32.2 TOR>BKN;32.2 MIL>CHA;32.2 MIN>CHA;32.2 SAC>CLE;32.2 CLE>UTA;
+32.2 DAL>NYK;32.2 GSW>MEM p50;32.2 MEM,PHI,UTA>MEM,WAS,PHI;32.2 HOU,PHX>CHI,PHX;32.2 WAS>LAL;
+33.1 MIN>CHA;33.1 PHX>CHA;33.1 TOR>LAC;33.1 LAL>UTA;33.1 MIA>MIL;
+33.2 SAC>ATL;33.2 HOU>CHA;33.2 MIN>CHA;33.2 TOR>LAC;33.2 MIA>MIL;33.2 OKC>MEM;33.2 PHX>NYK;33.2 DAL>WAS;33.2 WAS>MEM`;
+// swap chains: own = who holds each pick's rights at the start, lab = what each pick really is, f = how they settle.
+// f gets sl (slot of a team's pick), H (who holds the rights to that pick now), tm (a team) and srt (best first);
+// it returns the new owner of each pick ("PHI.2" = the second-rounder)
+const PICK_FN={
+  NOPMIL:{s:2027,o:['NOP','MIL'],own:{MIL:'ATL'},lab:{NOP:'better of NOP/MIL',MIL:'worse of NOP/MIL, top-4 protected'},
+    f:(sl,H,tm,srt)=>{const [a,b]=srt('NOP','MIL');return {[a]:H('NOP'),[b]:sl(b)<=4?tm('NOP'):H('MIL')}}},
+  OKCLAC:{s:2027,o:['OKC','DEN','LAC','TOR'],lab:{OKC:'OKC can swap it or DEN\'s for LAC\'s',LAC:'LAC can swap for TOR\'s'},
+    f:(sl,H,tm,srt)=>{const r={},ok=H('OKC'),mine=['OKC','DEN'].filter(a=>H(a)===ok),w=srt(...mine).pop();let lp='LAC';
+      if(sl('LAC')<sl(w)){r.LAC=ok;r[w]=H('LAC');lp=w}
+      if(sl('TOR')<sl(lp)){r.TOR=H('LAC');r[lp]=H('TOR')}
+      return r}},
+  UCLA:{s:2028,o:['UTA','CLE','LAL','ATL'],lab:{UTA:'best of UTA/CLE/LAL',LAL:'worse of LAL and the better of UTA/CLE',ATL:'better of ATL and the worse of UTA/CLE',CLE:'what is left of UTA/CLE/ATL'},
+    f:(sl,H,tm,srt)=>{const [m,n]=srt('UTA','CLE'),[x,y]=srt(m,'LAL'),[p,q]=srt('ATL',n);return {[x]:H('UTA'),[y]:H('LAL'),[p]:H('ATL'),[q]:H('CLE')}}},
+  BKN28:{s:2028,o:['PHI','BKN','PHX','NYK','WAS','MIL','POR'],own:{PHI:'BKN'},
+    lab:{PHI:'PHI\'s, top-8 protected, in a BKN/PHX/NYK swap',BKN:'BKN/PHX/NYK/PHI swap',PHX:'worse of WAS and the worst of BKN/PHX/PHI',NYK:'BKN can swap for it',WAS:'WAS/BKN/PHX and MIL/POR swaps',MIL:'MIL/POR/WAS swap',POR:'better of POR/MIL'},
+    f:(sl,H,tm,srt)=>{const r={},P=sl('PHI')>8;
+      if(!P){r.PHI=tm('PHI');r['PHI.2']=H('PHI')} // protected: Brooklyn gets Philadelphia's second instead
+      const A=P?['PHI','BKN','PHX']:['BKN','PHX'],L=srt(...A).pop(),[i,ww]=srt('WAS',L);r[ww]=H('PHX');
+      const rest=srt(...[...A,'NYK'].filter(a=>a!==L));
+      if(P){r[rest[0]]=H('BKN');r[rest[1]]=H('PHI');r[rest[2]]=H('NYK')}else{r[rest[0]]=H('BKN');r[rest[1]]=H('NYK')}
+      const [mp,mq]=srt('MIL','POR'),[c,d]=srt(i,mq);r[mp]=H('POR');r[c]=H('WAS');r[d]=H('MIL');
+      return r}},
+  UTA29:{s:2029,o:['UTA','CLE','MIN','CHA'],own:{CLE:'UTA',MIN:'CHA'},lab:{UTA:'best of UTA/CLE/MIN',CLE:'2nd best of UTA/CLE/MIN',MIN:'worst of UTA/CLE/MIN (MIN top-5 protected)'},
+    f:(sl,H,tm,srt)=>{const r={};
+      if(sl('MIN')>5){const [a,b,c]=srt('UTA','CLE','MIN');r[a]=H('UTA');r[b]=H('CLE');r[c]=H('MIN');return r}
+      const [a,b]=srt('UTA','CLE'),ch=H('MIN');r[a]=H('UTA');r[b]=ch;r['MIN.2']=H('UTA');
+      const x=srt(b,'CHA').pop();r.MIN=ch;r[x]=tm('MIN'); // Charlotte swaps its worst for Minnesota's top-5 pick
+      if(x!=='CHA')r.CHA=H('CHA');
+      return r}},
+  WAS30:{s:2030,o:['WAS','PHX','MEM'],lab:{WAS:'better of WAS/PHX',MEM:'better of MEM and the worse of WAS/PHX',PHX:'worst of WAS/PHX/MEM'},
+    f:(sl,H,tm,srt)=>{const [a,b]=srt('WAS','PHX'),[c,d]=srt('MEM',b);return {[a]:H('WAS'),[c]:H('MEM'),[d]:H('PHX')}}},
+  MIA30:{s:2030,o:['POR','MIL','MIA'],lab:{POR:'better of POR/MIL',MIL:'better of MIA and the worse of POR/MIL',MIA:'worst of POR/MIL/MIA'},
+    f:(sl,H,tm,srt)=>{const [a,b]=srt('POR','MIL'),[c,d]=srt(b,'MIA');return {[a]:H('POR'),[c]:H('MIL'),[d]:H('MIA')}}},
+  SAS30:{s:2030,o:['SAS','DAL','MIN'],lab:{SAS:'best of SAS/DAL/MIN (MIN No. 1 protected)',DAL:'worse of SAS/DAL',MIN:'worse of MIN and the better of SAS/DAL'},
+    f:(sl,H,tm,srt)=>{const [h,l]=srt('SAS','DAL');if(sl('MIN')===1)return {[h]:H('SAS'),[l]:H('DAL')};const [x,y]=srt('MIN',h);return {[l]:H('DAL'),[x]:H('SAS'),[y]:H('MIN')}}}
+};
+const RANKW=(i,n)=>n===2?['better','worse'][i]:i===n-1?'worst':['best','2nd best','3rd best','4th best'][i];
+function seedRealPicks(){
+  const tm=a=>{const t=S.teams.find(x=>x.abbr===a);return t?t.tid:null},pk=(y,rd,a)=>S.picks.find(k=>k.season===y&&k.rd===rd&&k.orig===tm(a));
+  const ref=s=>{const m=s.match(/^([A-Z]{3})(\d\d)\.([12])$/);return m?[m[1],2000+ +m[2],+m[3]]:null};
+  S.pools=[];S.swaps=S.swaps||[];
+  for(const e of REAL_PICKS.split(';').map(x=>x.trim()).filter(Boolean)){
+    const [yr,body,...opts]=e.split(/\s+/),[yy,rr]=yr.split('.'),y=2000+ +yy,rd=+rr;
+    if(body[0]==='*'){const P=PICK_FN[body.slice(1)];S.pools.push({s:y,rd,f:body.slice(1),o:P.o.map(tm)});
+      for(const a of P.o){const k=pk(y,rd,a);if(!k)continue;if(P.own&&P.own[a])k.owner=tm(P.own[a]);if(P.lab&&P.lab[a])k.pl=P.lab[a]}continue}
+    if(body.includes('<>')){const [h,g]=body.split('<>'),sw={season:y,holder:tm(h),grantor:tm(g)};if(opts[0])sw.p=+opts[0].slice(1);S.swaps.push(sw);continue}
+    const [from,to]=body.split('>').map(x=>x.split(','));
+    if(from.length>1){S.pools.push({s:y,rd,o:from.map(tm)});from.forEach((a,i)=>{const k=pk(y,rd,a);if(k){k.owner=tm(to[i]);k.pl=`${RANKW(i,from.length)} of ${from.join('/')}`}});continue}
+    const k=pk(y,rd,from[0]);if(!k)continue;k.owner=tm(to[0]);
+    const o=Object.fromEntries(opts.map(x=>x[0]==='p'?['p',x.slice(1)]:x[0]==='r'&&x[1]!==':'?['r',x.slice(1)]:x.split(':')));
+    if(o.p){k.prot=+o.p;k.from=tm(o.from||from[0]);
+      if(o.alt)k.alt=tm(o.alt);
+      if(o.r||o.fb||rd===2)k.pr={next:o.r?o.r.split(',').map(Number):[],fb:o.fb&&o.fb!=='none'?o.fb.split(',').map(ref).filter(Boolean):[]}}
+  }
+}
 // ---------- protected picks and swap rights ----------
 // a protected first stays with the team that traded it if it lands in the protected range; that team then owes its
 // next year's first instead, unprotected (or its second-rounders, if it no longer has that first)
-const PROTS=[[4,'Top-4'],[10,'Top-10'],[14,'Lottery (top-14)']];
-const protOk=k=>k.rd===1&&!k.prot&&(k.season>S.season||['regular','playoffs'].includes(S.phase));
+const PROTS=[[4,'Top-4'],[10,'Top-10'],[16,'Lottery (top-16)']]; // since 2026, new trades can't protect picks 12 to 15
+const protOk=k=>k.rd===1&&!k.prot&&!k.pl&&(k.season>S.season||['regular','playoffs'].includes(S.phase));
 // the first a protected pick would roll over to, which its giver can't trade until the protection is settled
 const owedNext=(tid,k)=>S.picks.some(z=>z.prot&&z.from===tid&&z.orig===k.orig&&z.rd===1&&k.rd===1&&z.season===k.season-1);
 const swapSeasons=()=>[...new Set(S.picks.filter(k=>k.rd===1&&(k.season>S.season||['regular','playoffs'].includes(S.phase)&&k.season===S.season)).map(k=>k.season))].sort((a,b)=>a-b);
@@ -3701,7 +3898,7 @@ const ownFirst=(tid,s)=>S.picks.find(k=>k.season===s&&k.rd===1&&k.orig===tid);
 function protVal(k,act,slot,yrs,v){
   const roll=slotValue(15)*.9;
   if(act)return act<=k.prot?roll:v;
-  if(yrs===0&&slot<=14){const row=lottoTable()[slot-1];let ev=0,hit=0;row.forEach((p,i)=>{if(!i)return;if(i<=k.prot)hit+=p;else ev+=p*slotValue(i)});return ev+hit*roll}
+  if(yrs===0&&slot<=LOT_N){const row=lottoTable()[slot-1];let ev=0,hit=0;row.forEach((p,i)=>{if(!i)return;if(i<=k.prot)hit+=p;else ev+=p*slotValue(i)});return ev+hit*roll}
   const p=clamp((k.prot-slot+6)/12,0,1);return (1-p)*v+p*roll;
 }
 // the right to swap firsts with another team: worth the gap between the two picks when the other one projects better
@@ -3713,20 +3910,39 @@ function swapVal(holder,grantor,s,mode,sl,viewer){
 function resolvePickRules(){
   const o=S.draft&&S.draft.orig;if(!o)return;
   const slotOf=k=>o.findIndex((x,j)=>x===k.orig&&(j<30)===(k.rd===1))+1,u=S.userTid;
+  const nm=k=>`${S.season} ${T(k.orig).abbr} ${k.rd===1?'first':'second'}`;
   for(const k of S.picks.filter(k=>k.season===S.season&&k.prot)){
-    const s=slotOf(k),giver=k.from,to=k.owner,mine=giver===u||to===u;
+    const s=slotOf(k),giver=k.from,to=k.owner,keep=k.alt??giver,pr=k.pr,mine=giver===u||to===u||keep===u;
     if(s<=k.prot&&giver!=null){
-      k.owner=giver;
-      const nx=S.picks.find(x=>x.season===S.season+1&&x.rd===1&&x.orig===k.orig);
-      if(nx&&nx.owner===giver){nx.owner=to;delete nx.prot;delete nx.from;if(mine)news(`The ${S.season} ${T(k.orig).abbr} first landed at No. ${s}, inside its top-${k.prot} protection: it stays with the ${tname(giver)}, and the ${tname(to)} get their ${S.season+1} first instead, unprotected.`)}
+      k.owner=keep;
+      const roll=k.rd===1&&(!pr||pr.next.length),nx=roll&&S.picks.find(x=>x.season===S.season+1&&x.rd===1&&x.orig===k.orig);
+      if(nx&&nx.owner===giver){nx.owner=to;delete nx.prot;delete nx.from;delete nx.pr;const p2=pr&&pr.next[0];if(p2){nx.prot=p2;nx.from=giver;nx.pr={next:pr.next.slice(1),fb:pr.fb}}
+        if(mine)news(`The ${nm(k)} landed at No. ${s}, inside its protection: it stays with the ${tname(keep)}, and the ${tname(to)} get the ${S.season+1} ${T(k.orig).abbr} first instead${p2?`, top-${p2} protected`:', unprotected'}.`)}
+      else if(pr){const fb=pr.fb.map(([a,y,rd])=>S.picks.find(x=>x.season===y&&x.rd===rd&&T(x.orig).abbr===a)).filter(Boolean);fb.forEach(x=>{x.owner=to});
+        if(mine)news(`The ${nm(k)} landed at No. ${s}, inside its protection: it stays with the ${tname(keep)}${fb.length?`, and the ${tname(to)} get ${fb.map(x=>`the ${x.season} ${T(x.orig).abbr} ${x.rd===1?'first':'second'}`).join(' and ')} instead`:`. The ${tname(to)}' claim on it ends`}.`)}
       else{const twos=S.picks.filter(x=>x.owner===giver&&x.rd===2&&x.season>S.season).sort((a,b)=>a.season-b.season).slice(0,2);twos.forEach(x=>x.owner=to);
-        if(mine)news(`The ${S.season} ${T(k.orig).abbr} first landed at No. ${s}, inside its top-${k.prot} protection: it stays with the ${tname(giver)}, who send ${twos.length?`${twos.length} second-round pick${twos.length>1?'s':''}`:'nothing (no picks left)'} to the ${tname(to)} instead.`)}
-    }else if(mine)news(`The ${S.season} ${T(k.orig).abbr} first landed at No. ${s}, outside its top-${k.prot} protection, so it conveys to the ${tname(to)}.`);
-    delete k.prot;delete k.from;
+        if(mine)news(`The ${nm(k)} landed at No. ${s}, inside its top-${k.prot} protection: it stays with the ${tname(giver)}, who send ${twos.length?`${twos.length} second-round pick${twos.length>1?'s':''}`:'nothing (no picks left)'} to the ${tname(to)} instead.`)}
+    }else if(mine)news(`The ${nm(k)} landed at No. ${s}, outside its protection, so it conveys to the ${tname(to)}.`);
+    delete k.prot;delete k.from;delete k.pr;delete k.alt;
   }
+  // pools and swap chains: the picks go out in order of slot
+  for(const P of (S.pools||[]).filter(p=>p.s===S.season)){
+    const ks=P.o.map(o=>S.picks.find(k=>k.season===S.season&&k.rd===P.rd&&k.orig===o));if(ks.some(k=>!k))continue;
+    const before=ks.map(k=>k.owner);let moves=[];
+    if(!P.f){const own=ks.map(k=>k.owner);ks.slice().sort((a,b)=>slotOf(a)-slotOf(b)).forEach((k,i)=>{k.owner=own[i]})}
+    else{
+      const ab=a=>S.teams.find(t=>t.abbr===a).tid,K=a=>{const [x,r]=a.split('.');return S.picks.find(k=>k.season===S.season&&k.rd===(r?+r:P.rd)&&k.orig===ab(x))};
+      const sl=a=>slotOf(K(a)),H=a=>K(a).owner,srt=(...a)=>a.slice().sort((x,y)=>sl(x)-sl(y));
+      const r=PICK_FN[P.f].f(sl,H,ab,srt);
+      for(const [a,tid] of Object.entries(r)){const k=K(a);if(k&&tid!=null)moves.push([k,tid])}
+      moves.forEach(([k,tid])=>{k.owner=tid});
+    }
+    ks.forEach((k,i)=>{if(k.owner!==before[i]&&(k.owner===u||before[i]===u))news(`Pick terms settled: the No. ${slotOf(k)} pick (${T(k.orig).abbr}, ${k.pl||'swap'}) goes to the ${tname(k.owner)}.`);delete k.pl});
+  }
+  S.pools=(S.pools||[]).filter(p=>p.s>S.season);
   for(const sw of (S.swaps||[]).filter(x=>x.season===S.season)){
     const a=ownFirst(sw.holder,S.season),b=ownFirst(sw.grantor,S.season);
-    if(a&&b&&slotOf(b)<slotOf(a)){[a.owner,b.owner]=[b.owner,a.owner];if(sw.holder===u||sw.grantor===u)news(`The ${tname(sw.holder)} used their swap rights: they take the ${tname(sw.grantor)}' first (No. ${slotOf(b)}) for their own (No. ${slotOf(a)}).`)}
+    if(a&&b&&slotOf(b)<slotOf(a)&&!(sw.p&&slotOf(b)<=sw.p)){[a.owner,b.owner]=[b.owner,a.owner];if(sw.holder===u||sw.grantor===u)news(`The ${tname(sw.holder)} used their swap rights: they take the ${tname(sw.grantor)}' first (No. ${slotOf(b)}) for their own (No. ${slotOf(a)}).`)}
     else if(sw.holder===u)news(`Your swap rights with the ${tname(sw.grantor)} went unused: your own first is the better pick.`);
   }
   S.swaps=(S.swaps||[]).filter(x=>x.season>S.season);
@@ -3746,21 +3962,14 @@ function pickProj(k,sl){
 }
 // on the same scale as player trade values: #1 is worth about a 60-rated young starter on a fair deal
 const slotValue=s=>s<=30?10+130*Math.pow((31-s)/30,2.5):4;
-// chance of each final slot for the lottery team ranked r (1 = worst record): 20,000 simulated lotteries at real odds
-const LOTTO_W=[140,140,140,125,105,90,75,60,45,30,20,15,10,5]; // out of 1,000
+// chance of each final slot for the lottery team ranked r (1 = worst record of the 16): 20,000 simulated 3-2-1
+// lotteries, with ranks 11-14 standing in for the 9 and 10 seeds and 15-16 for the 7 v 8 losers
+const LOT_B=[2,2,2,3,3,3,3,3,3,3,2,2,2,2,1,1];
+const OLD_W=[140,140,140,125,105,90,75,60,45,30,20,15,10,5]; // the pre-2027 odds, out of 1,000
 let LOTTO=null;
-function lottoTable(){
-  if(LOTTO)return LOTTO;
-  const N=20000,t=Array.from({length:14},()=>new Array(15).fill(0));
-  for(let n=0;n<N;n++){
-    const pool=[...Array(14).keys()],top=[];
-    for(let d=0;d<4;d++){let x=Math.random()*pool.reduce((s,i)=>s+LOTTO_W[i],0),j=0;for(;j<pool.length-1;j++){x-=LOTTO_W[pool[j]];if(x<=0)break}top.push(pool.splice(j,1)[0])}
-    top.forEach((r,i)=>t[r][i+1]++);pool.forEach((r,i)=>t[r][5+i]++); // the rest pick in record order after the top four
-  }
-  return LOTTO=t.map(row=>row.map(c=>c/N));
-}
+function lottoTable(){return LOTTO||(LOTTO=lotSim(LOT_B,LOT_B.map((_,i)=>i<3),[],false))}
 const lottoEV=r=>lottoTable()[r-1].reduce((s,p,i)=>s+(i?p*slotValue(i):0),0);
-const lottoTop4=r=>lottoTable()[r-1].slice(1,5).reduce((s,p)=>s+p,0);
+const lottoTop5=r=>lottoTable()[r-1].slice(1,6).reduce((s,p)=>s+p,0);
 // once the lottery is drawn, this year's picks have real slots
 function draftSlotOf(k){
   if(!S.draft||!S.draft.orig||k.season!==S.season||!['combine','draft'].includes(S.phase))return null;
@@ -3780,7 +3989,7 @@ function pickValue(k,mode,sl,tid){
   if(k.rd===2)v=4;
   else{
     const act=draftSlotOf(k),slot=act||pickProj(k,sl);
-    v=act?slotValue(act):yrs===0&&slot<=14?lottoEV(slot):slotValue(slot); // lottery teams: the whole range of outcomes
+    v=act?slotValue(act):yrs===0&&slot<=LOT_N?lottoEV(slot):slotValue(slot); // lottery teams: the whole range of outcomes
     if(k.prot)v=protVal(k,act,slot,yrs,v);
     if(!isFut(k))v*=classMult(slot);
     else{let m=futMult(k,slot,tid);if(mode==='rebuilding')m=1+(m-1)*1.3;v*=m} // rebuilders lean hardest on the class
@@ -3792,10 +4001,10 @@ function pickValue(k,mode,sl,tid){
 }
 // NBA "Stepien rule": a team can't be without a first-round pick in two consecutive future drafts
 function stepienIssue(tid,owned){
-  const years=[...new Set(S.picks.map(k=>k.season))].sort((a,b)=>a-b);
-  const has=y=>owned.some(k=>k.season===y&&k.rd===1);
+  const years=[...new Set(S.picks.map(k=>k.season))].sort((a,b)=>a-b),now=S.picks.filter(k=>k.owner===tid);
+  const has=y=>owned.some(k=>k.season===y&&k.rd===1),had=y=>now.some(k=>k.season===y&&k.rd===1);
   for(let i=0;i<years.length-1;i++){const y=years[i];
-    if(!has(y)&&!has(y+1))return `${tid===S.userTid?'You':T(tid).abbr} would have no first-round pick in ${y} or ${y+1}. Teams can't trade away firsts in back-to-back future drafts (the Stepien rule).`;}
+    if(!has(y)&&!has(y+1)&&(had(y)||had(y+1)))return `${tid===S.userTid?'You':T(tid).abbr} would have no first-round pick in ${y} or ${y+1}. Teams can't trade away firsts in back-to-back future drafts (the Stepien rule).`;}
   return null;
 }
 function tradeOpen(){return (S.phase==='regular'&&S.day<deadlineDay())||['combine','draft','freeagency'].includes(S.phase)}
@@ -4871,7 +5080,7 @@ function pressBeat(){
       ['We have underachieved. That is on everyone, starting with me.',{team:2,sec:SEC(0,0,1)},'measured'],
       ['Some guys are not playing up to their contracts.',{team:-4,hype:2},'blunt'],
       ['There is a lot of season left.',{hype:-1},'deflect']]]);
-  if(gp>=25&&rank<=3)add('tank',()=>[`You're ${t.w}-${t.l}, near the bottom of the league. Are you playing for the lottery?`,[
+  if(gp>=25&&rank<=3)add('tank',()=>[`You're ${t.w}-${t.l}, near the bottom of the league. ${S.season>=2027?' The three worst records get the fewest lottery balls now.':''} Are you playing for the lottery?`,[
       ['No. We compete every night. That is the culture.',{team:3,hype:1,sec:SEC(1,-1,-1)},'bold'],
       ['We are developing young players. The record is not the focus.',{hype:-3,sec:SEC(-2,1,4)},'patient'],
       ['I have never seen a ping-pong ball in my life.',{hype:1},'joke']]]);
@@ -5309,9 +5518,10 @@ function guidance(){
     case 'regular':{
       const left=deadlineDay()-S.day;
       return `<h3>Front office desk</h3><p>${left>0?`The trade deadline is in <b>${left} days</b>. Contenders pay for veterans; rebuilding teams want youth and expiring deals.`:'The deadline has passed. Ride out the season, or sign minimum-salary free agents to fill holes.'}</p>`;}
-    case 'playoffs':return `<h3>Playoffs</h3><p>${S.po.seeded.includes(u)?'Your team is in the bracket. Sim game by game to follow your series.':'You missed the playoffs. Your lottery odds improve with a worse record; lottery night follows the Finals.'}</p>`;
+    case 'playoffs':if(piOn())return `<h3>Play-in</h3><p>${piGame(u,true)?'Your play-in game is next. Win and you are in; the 7 vs 8 loser gets a second chance at the 8 seed.':S.po.seeded.includes(u)?'You have a top-6 seed. The play-in decides the 7 and 8 seeds, then the first round starts.':piGame(u)?'Your season ended in the play-in. Lottery night follows the Finals.':'You missed the playoffs. Lottery night follows the Finals.'}</p>`;
+      return `<h3>Playoffs</h3><p>${S.po.seeded.includes(u)?'Your team is in the bracket. Sim game by game to follow your series.':'You missed the playoffs. Under the 3-2-1 lottery every team outside the top 7 seeds gets balls, and the three worst records get fewer; lottery night follows the Finals.'}</p>`;
     case 'lottery':{const L=S.lotto,mine=S.draft.order.map((t,i)=>t===u?i+1:0).filter(Boolean);
-      return `<h3>Lottery night</h3><p>${L&&L.done?`The order is set. Your picks: ${mine.join(', ')||'none'}. The combine opens next.`:`The ${L?L.seeds.length:14} teams that missed the playoffs are drawing for the top four picks. Watch the reveal, or skip to the results.`}</p>`}
+      return `<h3>Lottery night</h3><p>${L&&L.done?`The order is set. Your picks: ${mine.join(', ')||'none'}. The combine opens next.`:`${L&&L.old?`The ${L.seeds.length} teams that missed the playoffs are drawing for the top four picks.`:`The ${L?L.seeds.length:LOT_N} lottery teams are drawing for picks 1 to ${L?L.seeds.length:LOT_N}.`} Watch the reveal, or skip to the results.`}</p>`}
     case 'combine':{const c=S.combine,mine=S.draft.order.map((t,i)=>t===u?i+1:0).filter(Boolean);
       return `<h3>Pre-draft combine</h3><p>Your picks: ${mine.join(', ')||'none'}. Measurements for the top ${COMBINE_INVITES} prospects are public. Use your private slots on the Draft tab: workouts ${c.work.length}/${WORKOUTS}, interviews ${c.int.length}/${INTERVIEWS}, medicals ${c.med.length}/${medSlots()}. Start the draft when you're ready.</p>`}
     case 'draft':return `<h3>Draft day</h3><p>${S.draft.order[S.draft.idx]===u?`You're on the clock with pick ${S.draft.idx+1}. Open the Draft tab to choose. Potential is a scouting estimate, not a promise.`:'Your picks are done.'}</p>`;
@@ -6489,25 +6699,27 @@ function closeLot(){if(UI.lot)clearTimeout(UI.lot.timer);UI.lot=null}
 function drawLot(){const el=document.getElementById('lotto');if(el)el.innerHTML=lotInner();else render()}
 function lotBanner(L){
   const n=L.order.length,at=L.at,t=x=>`the ${T(x).city} ${T(x).nick}`;
-  if(!at)return `${n} teams, 4 lottery picks. The ping-pong balls decide the top four; everyone else picks in reverse order of record.`;
+  if(!at)return L.old?`${n} teams, 4 lottery picks. The ping-pong balls decide the top four; everyone else picks in reverse order of record.`
+    :`${n} teams, ${L.b.reduce((s,x)=>s+x,0)} balls, and every pick from 1 to ${n} is drawn. The three worst records have 2 balls and can't fall below No. ${REL_FLOOR}.${L.seeds.filter((t,i)=>L.bar[i]).map(t=>` ${T(t).abbr}'s pick can't land ${L.bar[L.seeds.indexOf(t)]===1?'No. 1 (it won last year)':'in the top 5 (top 5 the last two years)'}.`).join('')}`;
   if(at<=n-2){const slot=n+1-at,x=L.order[slot-1],sd=lottoSeed(L,x);
     return slot<sd?`No. ${slot}: ${t(x)} jump up from No. ${sd} (a ${pctTxt(lottoChance(L,x))} chance).`
       :slot>sd?`No. ${slot}: ${t(x)}. They drop from No. ${sd}.`:`No. ${slot}: ${t(x)}, right where they started.`}
   if(at===n-1)return `The final two: ${t(L.order[0])} and ${t(L.order[1])}. One of them wins the No. 1 pick.`;
   const w=L.order[0],sd=lottoSeed(L,w);
-  return `No. 2 goes to ${t(L.order[1])}, so ${t(w)} win the lottery from the No. ${sd} spot (${pctTxt(LOTTO_W[sd-1]/1000)} odds)!`;
+  return `No. 2 goes to ${t(L.order[1])}, so ${t(w)} win the lottery from the No. ${sd} spot (${pctTxt(lotOdds1(L,sd-1))} odds)!`;
 }
 function lotInner(){
   const L=S.lotto,V=UI.lot,u=S.userTid,n=L.order.length,shown=lottoShown(L,L.at);
   const owner=slot=>S.draft.order[slot-1],ownerOf=t=>owner(lottoSlot(L,t));
   const mineT=t=>t===u||ownerOf(t)===u;
   const odds=L.seeds.map((t,i)=>{const sl=lottoSlot(L,t),vis=shown.has(sl),ow=ownerOf(t),d=i+1-sl;
-    return `<tr class="${mineT(t)?'you':''}"><td class="l">${i+1}</td><td class="l">${chip(t)} ${T(t).nick}${ow!==t?` <small class="muted">pick owned by ${T(ow).abbr}</small>`:''}</td><td>${L.rec[i][0]}-${L.rec[i][1]}</td><td>${pctTxt(LOTTO_W[i]/1000)}</td><td>${pctTxt(lottoTop4(i+1))}</td><td class="l">${vis?`<b>#${sl}</b>${d>0?` <span class="good">▲${d}</span>`:d<0?` <span class="bad">▼${-d}</span>`:''}`:'<span class="muted">?</span>'}</td></tr>`}).join('');
+    const bl=L.old?'':`<td title="${L.rel[i]?'Three worst records: 2 balls, floor No. 12':LOT_GRP[L.grp[i]]}">${L.b[i]}${L.rel[i]?' <small class="muted">R</small>':''}${L.bar[i]?` <small class="bad">no top ${L.bar[i]}</small>`:''}</td>`;
+    return `<tr class="${mineT(t)?'you':''}"><td class="l">${i+1}</td><td class="l">${chip(t)} ${T(t).nick}${ow!==t?` <small class="muted">pick owned by ${T(ow).abbr}</small>`:''}${L.old?'':` <small class="muted">${LOT_TAG[L.grp[i]]}</small>`}</td><td>${L.rec[i][0]}-${L.rec[i][1]}</td>${bl}<td>${pctTxt(lotOdds1(L,i))}</td><td>${pctTxt(lotTop5(L,i))}</td><td class="l">${vis?`<b>#${sl}</b>${d>0?` <span class="good">▲${d}</span>`:d<0?` <span class="bad">▼${-d}</span>`:''}`:'<span class="muted">?</span>'}</td></tr>`}).join('');
   const two=L.at===n-1;
   const slots=Array.from({length:n},(_,i)=>i+1).map(sl=>{const x=L.order[sl-1],vis=shown.has(sl),ow=owner(sl),you=vis&&ow===u;
     const who=vis?`${chip(x)} <b>${T(x).city} ${T(x).nick}</b>${ow!==x?` <small class="muted">to ${T(ow).abbr}</small>`:''}`:two&&sl<=2?`<span class="muted">${T(L.order[0]).nick} or ${T(L.order[1]).nick}</span>`:'<span class="muted">?</span>';
     const sd=vis?lottoSeed(L,x):0;
-    return `<li class="${vis?'on':''}${sl<=4?' top':''}${you?' you':''}${vis&&sl===n+1-L.at?' new':''}${L.at>=n&&sl<=2?' new':''}"><span class="n num">${sl}</span><span>${who}</span><small class="muted">${vis?`seed ${sd}`:''}</small></li>`}).join('');
+    return `<li class="${vis?'on':''}${sl<=(L.old?4:5)?' top':''}${you?' you':''}${vis&&sl===n+1-L.at?' new':''}${L.at>=n&&sl<=2?' new':''}"><span class="n num">${sl}</span><span>${who}</span><small class="muted">${vis?`seed ${sd}`:''}</small></li>`}).join('');
   const inv=Object.entries(S.draft.cons||{}).sort((a,b)=>a[1]-b[1]).map(e=>pById(+e[0])).filter(Boolean);
   const means=L.done?`<div><h3>What it means</h3><p class="muted" style="font-size:.85rem">The media's big board, lined up with the top of the draft.</p><ul class="lot-means">${inv.slice(0,5).map((p,i)=>`<li><b class="num">#${i+1}</b> ${chip(owner(i+1))} ${esc(p.name)} <span class="muted">${p.pos}${p.arch?' · '+esc(p.arch):''}</span></li>`).join('')}</ul></div>`:'';
   const flips=L.flips.length?`<p class="muted" style="font-size:.85rem">Coin flips for tied records: ${L.flips.map(([a,b])=>`${T(a).abbr} won over ${T(b).abbr}`).join(', ')}.</p>`:'';
@@ -6517,8 +6729,9 @@ function lotInner(){
   return `<div class="spread"><h2>${L.s} draft lottery</h2><div class="row">${ctrl}${L.done?'':'<button class="btn small" data-act="lotClose" aria-label="Close lottery night">Close</button>'}</div></div>
     <p class="lot-banner" aria-live="polite">${esc(lotBanner(L))}</p>
     <div class="grid2"><div><h3>The draw</h3><ol class="lot-slots">${slots}</ol></div>
-    <div><h3>Pre-lottery odds</h3><div class="scroll"><table><thead><tr><th class="l">Seed</th><th class="l">Team</th><th>Record</th><th title="Chance at the No. 1 pick">#1</th><th title="Chance at a top-4 pick">Top 4</th><th class="l">Result</th></tr></thead><tbody>${odds}</tbody></table></div>${flips}${means}</div></div>`;
+    <div><h3>Pre-lottery odds</h3><div class="scroll"><table><thead><tr><th class="l">Seed</th><th class="l">Team</th><th>Record</th>${L.old?'':'<th title="Lottery balls">Balls</th>'}<th title="Chance at the No. 1 pick">#1</th><th title="Chance at a top-5 pick">Top 5</th><th class="l">Result</th></tr></thead><tbody>${odds}</tbody></table></div>${L.old?'':`<p class="muted" style="font-size:.85rem">3 balls for teams that missed the play-in, 2 for the three worst records (R, floor No. ${REL_FLOOR}) and the 9 and 10 seeds, 1 for the 7 vs 8 losers.</p>`}${flips}${means}</div></div>`;
 }
+const LOT_GRP={3:'Missed the play-in: 3 balls',2:'9 or 10 seed: 2 balls',1:'Lost the 7 vs 8 play-in game: 1 ball'},LOT_TAG={3:'',2:'play-in',1:'7v8 loser'};
 function renderLot(){return `<div class="modal-bg"><div class="modal wide" role="dialog" aria-modal="true" aria-label="Draft lottery" id="lotto">${lotInner()}</div></div>`}
 // ---------- live game viewer ----------
 // the game you watch is the game the day sim would have played: it starts from today's state and steps on a timer, and when it
@@ -6532,6 +6745,10 @@ function myGameToday(){
     if(!g)return null;
     const riv=rivOf(g.h,g.a)>=RIVAL,tags=[g.tv&&'National TV',g.cup&&cupOn()&&'In-Season Cup',riv&&'Rivalry'].filter(Boolean);
     return {kind:'reg',h:g.h,a:g.a,record:true,label:`${S.season} regular season, day ${S.day+1}`,tags,big:!!(g.tv||riv)};
+  }
+  if(S.phase==='playoffs'&&piOn()){
+    const g=piGame(u,true);if(!g)return null;const tag=piTag(g);
+    return {kind:'po',h:g.a,a:g.b,record:false,label:`${S.season} play-in · ${tag}`,tags:['Play-in'],big:true};
   }
   if(S.phase==='playoffs'){
     const rd=S.po.rounds.length-1,s=S.po.rounds[rd].find(s=>!sDone(s)&&(s.a===u||s.b===u));if(!s)return null;
@@ -6695,19 +6912,19 @@ function pickList(tid,set,act){
   const swl=(S.swaps||[]).filter(x=>x.holder===tid||x.grantor===tid).map(x=>x.holder===tid?`Can swap ${x.season} firsts with the ${T(x.grantor).abbr}`:`The ${T(x.holder).abbr} can swap ${x.season} firsts with them`);
   const swNote=swl.length?`<p class="muted" style="font-size:.85rem">${swl.join('. ')}.</p>`:'';
   if(!ks.length)return '<p class="muted">No draft picks.</p>'+swNote;
-  return `<div class="scroll"><table><thead><tr>${act?'<th></th>':''}<th class="l">Pick</th><th class="l">From</th><th class="l">Slot</th></tr></thead><tbody>${ks.map(k=>{const s=pickProj(k,sl)+(k.rd===2?30:0);return `<tr class="${set&&set.has(k.id)?'sel':''}">${act?`<td><input type="checkbox" class="check" id="${act}-${k.id}" data-act="${act}" data-arg="${k.id}" ${set.has(k.id)?'checked':''} aria-label="Select ${pickLabel(k)} pick"></td>`:''}<td class="l">${k.season} ${k.rd===1?'1st round':'2nd round'}${k.prot?` <span class="pill" title="If it lands in the top ${k.prot}, it goes back to the ${T(k.from).abbr}, who owe their next first instead">Top-${k.prot} prot.</span>`:''}</td><td class="l">${chip(k.orig)}${k.orig===tid?' <span class="muted">own</span>':''}</td><td class="l">${pickSlotText(k,sl)}</td></tr>`}).join('')}</tbody></table></div>${swNote}`;
+  return `<div class="scroll"><table><thead><tr>${act?'<th></th>':''}<th class="l">Pick</th><th class="l">From</th><th class="l">Slot</th></tr></thead><tbody>${ks.map(k=>{const s=pickProj(k,sl)+(k.rd===2?30:0);return `<tr class="${set&&set.has(k.id)?'sel':''}">${act?`<td><input type="checkbox" class="check" id="${act}-${k.id}" data-act="${act}" data-arg="${k.id}" ${set.has(k.id)?'checked':''} aria-label="Select ${pickLabel(k)} pick"></td>`:''}<td class="l">${k.season} ${k.rd===1?'1st round':'2nd round'}${k.prot?` <span class="pill" title="${k.rd===1?`If it lands in the top ${k.prot}, it stays with the ${T(k.alt??k.from).abbr}`:`If it is pick ${k.prot} or better, it stays with the ${T(k.from).abbr}`}">${k.rd===1?`Top-${k.prot}`:`31-${k.prot}`} prot.</span>`:''}${k.pl?`<br><small class="muted" title="Settled on lottery night">${esc(k.pl)}</small>`:''}</td><td class="l">${chip(k.orig)}${k.orig===tid?' <span class="muted">own</span>':''}</td><td class="l">${pickSlotText(k,sl)}</td></tr>`}).join('')}</tbody></table></div>${swNote}`;
 }
 const classNote=()=>{const c=(S.cls||{})[S.season];return c&&c.q!=='normal'?` <span class="pill ${c.q==='deep'?'good':'warn'}">${c.q} class</span>`:''};
 function pickSlotText(k,sl){
   const act=draftSlotOf(k);
   if(act)return `<b>#${act}</b>${k.rd===1?classNote():''}`;
   const s=pickProj(k,sl)+(k.rd===2?30:0);
-  if(k.season===S.season&&k.rd===1&&s<=14)return `Lottery, proj. #${s} <span class="muted">(${Math.round(lottoTop4(s)*100)}% top 4)</span>${classNote()}`;
+  if(k.season===S.season&&k.rd===1&&s<=LOT_N)return `Lottery, proj. #${s} <span class="muted">(${Math.round(lottoTop5(s)*100)}% top 5)</span>${classNote()}`;
   return `${k.season>S.season?'~':''}#${s}${k.season===S.season&&k.rd===1&&!isFut(k)?classNote():''}${fcPill(k)}`;
 }
 function renderStandings(){
-  const tbl=c=>`<div class="panel"><h3>${c==='E'?'Eastern':'Western'} Conference</h3><div class="scroll"><table><thead><tr><th class="l">#</th><th class="l">Team</th><th>W</th><th>L</th><th>Pct</th><th>GB</th><th>Diff</th><th>Rating</th></tr></thead><tbody>${confStand(c).map((x,i,a)=>{const gb=((a[0].w-x.w)+(x.l-a[0].l))/2;return `<tr class="${x.tid===S.userTid?'you':''} ${i===7?'cut':''}"><td class="l">${i+1}</td><td class="l">${chip(x.tid)} ${x.city} ${x.nick}</td><td>${x.w}</td><td>${x.l}</td><td>${pct(x).toFixed(3).replace(/^0/,'')}</td><td>${gb?gb.toFixed(1):'–'}</td><td>${fmtDiff(x)}</td><td>${teamOvr(x.tid)}</td></tr>`}).join('')}</tbody></table></div></div>`;
-  return `<div class="grid2">${tbl('E')}${tbl('W')}</div><p class="muted">Top 8 in each conference make the playoffs (dashed line).</p>${renderCup()}`;
+  const tbl=c=>`<div class="panel"><h3>${c==='E'?'Eastern':'Western'} Conference</h3><div class="scroll"><table><thead><tr><th class="l">#</th><th class="l">Team</th><th>W</th><th>L</th><th>Pct</th><th>GB</th><th>Diff</th><th>Rating</th></tr></thead><tbody>${confStand(c).map((x,i,a)=>{const gb=((a[0].w-x.w)+(x.l-a[0].l))/2;return `<tr class="${x.tid===S.userTid?'you':''} ${i===5||i===9?'cut':''}"><td class="l">${i+1}</td><td class="l">${chip(x.tid)} ${x.city} ${x.nick}</td><td>${x.w}</td><td>${x.l}</td><td>${pct(x).toFixed(3).replace(/^0/,'')}</td><td>${gb?gb.toFixed(1):'–'}</td><td>${fmtDiff(x)}</td><td>${teamOvr(x.tid)}</td></tr>`}).join('')}</tbody></table></div></div>`;
+  return `<div class="grid2">${tbl('E')}${tbl('W')}</div><p class="muted">Seeds 1 to 6 in each conference make the playoffs; 7 to 10 go to the play-in (dashed lines).</p>${renderCup()}`;
 }
 function renderCup(){
   if(!cupOn())return '';
@@ -6795,7 +7012,7 @@ function renderTradeBuild(){
   keep(UI.pm,id=>{const k=pickById(id);return k&&k.owner===S.userTid});keep(UI.pt,id=>{const k=pickById(id);return k&&k.owner===tid});
   UI.swG=UI.swG||new Set();UI.swY=UI.swY||new Set();UI.prot=UI.prot||{};
   const e=evalTrade(tid,[...UI.tm],[...UI.tt],[...UI.pm],[...UI.pt],null,tradeX());
-  const sws=swapSeasons().filter(s=>ownFirst(S.userTid,s)&&ownFirst(tid,s));
+  const sws=swapSeasons().filter(s=>{const a=ownFirst(S.userTid,s),b=ownFirst(tid,s);return a&&b&&!a.pl&&!b.pl&&!(S.swaps||[]).some(x=>x.season===s&&[x.holder,x.grantor].some(t=>t===S.userTid||t===tid))});
   const swRow=(set,act,label)=>sws.length?`<p class="row" style="flex-wrap:wrap;gap:.3rem;margin:.4rem 0"><span class="muted" style="font-size:.85rem">${label}</span>${sws.map(s=>`<button class="btn small tog${set.has(s)?' on':''}" data-act="${act}" data-arg="${s}" aria-pressed="${set.has(s)}">${s}</button>`).join('')}</p>`:'';
   const protRows=[...UI.pm].map(pickById).filter(k=>k&&protOk(k)).map(k=>`<p class="row" style="margin:.3rem 0"><label>${esc(pickLabel(k))} protection <select data-prot="${k.id}"><option value="0">None</option>${PROTS.map(([n,l])=>`<option value="${n}" ${UI.prot[k.id]===n?'selected':''}>${l}</option>`).join('')}</select></label></p>`).join('');
   const myTpe=e.tpeUse.find(x=>x.tid===S.userTid),cOut=Math.min(cashLeft(S.userTid,'out'),cashLeft(tid,'in')),cIn=Math.min(cashLeft(tid,'out'),cashLeft(S.userTid,'in'));
@@ -6916,13 +7133,21 @@ function renderFuture(){
    <div class="row"><button class="btn small${S.fscout?' primary':''}" data-act="fscout" aria-pressed="${!!S.fscout}">${S.fscout?'Scouting the high school circuit':'Scout the high school circuit'}</button><span class="muted" style="font-size:.88rem">Uses 2 focus-list spots and sharpens your future reads a little every week${sharp?` (now ${sharp}% sharper)`:''}. A Draft guru and better analytics staff help too.</span></div>
    <div class="fgrid">${cards}</div></div>`;
 }
+function playInBox(){
+  const P=S.po.pi,sc=(g,s)=>g.sc?g.sc[s]:'';
+  const game=g=>`<div class="series"><div class="${g.w===g.a?'w':''}"><span>${chip(g.a)} <small class="muted">${g.sa}</small></span><b class="num">${sc(g,0)}</b></div><div class="${g.w===g.b?'w':''}"><span>${chip(g.b)} <small class="muted">${g.sb}</small></span><b class="num">${sc(g,1)}</b></div><span class="story">${PI_NAME[g.k]}${g.w==null?' · next':''}</span></div>`;
+  const row=conf=>{const gs=P.g.filter(g=>g.conf===conf),k=x=>gs.find(g=>g.k===x);
+    return `<h3>${conf==='E'?'East':'West'} play-in</h3><div class="scroll"><div class="bracket pi">${game(k('78'))}${game(k('910'))}${k('8')?game(k('8')):'<div class="series muted">7 vs 8 loser hosts the 9 vs 10 winner for the 8 seed</div>'}</div></div>`};
+  return row('E')+row('W');
+}
 function renderPlayoffs(){
-  if(!S.po)return `<div class="panel"><h2>Playoffs</h2><p class="muted">The bracket appears when the regular season ends. Top 8 in each conference qualify.</p></div>`;
+  if(!S.po)return `<div class="panel"><h2>Playoffs</h2><p class="muted">The bracket appears when the regular season ends. Seeds 1 to 6 in each conference qualify; seeds 7 to 10 play in for the last two spots.</p></div>`;
   const names=['First round','Conf. semifinals','Conf. finals','Finals'];
   const next=s=>sDone(s)?'':s.wa+s.wb===6?' <span class="pill bad">Game 7 next</span>':s.wa===3||s.wb===3?' <span class="pill warn">Elimination game next</span>':'';
   const ser=s=>`<div class="series"><div class="${s.wa===4?'w':''}"><span>${chip(s.a)} <small class="muted">${s.sa}</small></span><b class="num">${s.wa}</b></div><div class="${s.wb===4?'w':''}"><span>${chip(s.b)} <small class="muted">${s.sb}</small></span><b class="num">${s.wb}</b></div>${s.story?`<span class="story">${esc(s.story)}</span>`:next(s)}</div>`;
   const fm=S.po.fmvp!=null&&pById(S.po.fmvp);
   return `<div class="panel"><div class="spread"><h2>${S.season} playoffs</h2>${S.po.champ!=null?`<span>${chip(S.po.champ)} <b>${tname(S.po.champ)}</b> are champions${fm?` · Finals MVP ${plink(fm.pid,fm.name)} <span class="muted">(${lineText(S.po.fst[fm.pid])})</span>`:''}</span>`:''}</div>
+  ${S.po.pi?playInBox():''}
   <div class="scroll"><div class="bracket">${names.map((n,i)=>`<div style="display:grid;gap:.5rem;align-content:start"><h3>${n}</h3>${(S.po.rounds[i]||[]).map(ser).join('')||'<span class="muted">TBD</span>'}</div>`).join('')}</div></div></div>
   ${S.lastBox&&S.lastBox.label.includes('playoffs')?`<div class="panel"><div class="spread"><h3>Your last playoff game</h3>${S.lastBox.id&&gameLog(S.lastBox.id)?`<button class="btn small" data-act="game" data-arg="${S.lastBox.id}">Game page</button>`:''}</div>${S.lastBox.recap?`<p>${esc(S.lastBox.recap)}</p>`:''}${renderBox()}</div>`:''}`;
 }
@@ -7260,10 +7485,11 @@ seedOwners(); // saves from before named owners: your owner keeps the type you a
 if(S.userTid!=null&&S.owner){const o=S.owner,id=T(S.userTid).own;if(o.nrev==null){id.type=o.type;o.nrev=o.hist.filter(h=>h.tid===S.userTid).length;o.log=o.log||[];o.pl=o.pl||[]}}
 if(S.userTid!=null&&!S.owner)newOwner(S.userTid);
 if(S.owner&&!S.owner.deal){gmDeal();if(!career().jobs.length)career().jobs.push({tid:S.userTid,from:S.owner.deal.s0,owner:ownName(),sal:S.owner.deal.sal})}
+if(S.lotto&&!S.lotto.b){S.lotto.b=S.lotto.seeds.map((_,i)=>OLD_W[i]||5);S.lotto.old=1;S.lotto.rel=[];S.lotto.bar=[];S.lotto.grp=[]}
 if(!S.picks){ // saves from before pick trading: give every team its own picks
   S.picks=[];S.nextPickId=1;
   const first=(S.phase==='draft'||S.phase==='resign')?S.season+1:S.season;
-  for(let y=0;y<4;y++)addPicks(first+y);
+  for(let y=0;y<PICK_YRS;y++)addPicks(first+y);
   save();
 }
 render();
