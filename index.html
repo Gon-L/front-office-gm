@@ -396,7 +396,41 @@ function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(S))}catch(e){}}
 function load(){try{const s=localStorage.getItem(SAVE_KEY);if(s)return JSON.parse(s)}catch(e){}return null}
 
 const T=tid=>S.teams[tid];
-const roster=tid=>S.players.filter(p=>p.tid===tid);
+const roster=tid=>S.players.filter(p=>p.tid===tid&&!p.tw);
+// ---------- two-way and 10-day contracts ----------
+// two-way: up to 3 players with under 4 years of service, 24 or younger; they don't count against the cap or the
+// 15-man roster and spend the season in the G League. 10-day: from early January, a prorated minimum deal for 10 days,
+// at most two with the same team in a season
+const TW_MAX=3,TW_SAL=.6,TEN_FROM=Math.round(165*.36);
+const twoWays=tid=>S.players.filter(p=>p.tid===tid&&p.tw);
+const twOk=(tid,p)=>p.tid===-1&&!p.rfa&&svcOf(p)<4&&p.age<=24&&twoWays(tid).length<TW_MAX&&['regular','freeagency'].includes(S.phase);
+function signTwoWay(tid,p){
+  delete p.rights;delete p.idle;delete p.agg;p.tid=tid;p.tw=1;p.contract={amt:TW_SAL,b:TW_SAL,r:0,s:S.season,exp:S.season,aav:TW_SAL};p.ask=0;
+  newTeamMood(p);p.gl=true;p.byrs=0;
+}
+function tenWhy(tid,p){
+  if(S.phase!=='regular'||S.day<TEN_FROM)return '10-day contracts start in early January.';
+  if(p.tid!==-1)return 'Not a free agent.';
+  if(roster(tid).length>=15)return 'Your roster is full.';
+  if(p.tenN&&p.tenN.tid===tid&&p.tenN.s===S.season&&p.tenN.n>=2)return `${p.name} has had two 10-day deals with you. Sign him for the rest of the season instead.`;
+  return '';
+}
+function signTen(tid,p){
+  const n=p.tenN&&p.tenN.tid===tid&&p.tenN.s===S.season?p.tenN.n+1:1;
+  delete p.rights;delete p.idle;delete p.agg;p.tid=tid;p.contract={amt:r1(Math.max(.1,minFor(p)*10/SEASON_DAYS)),r:0,s:S.season,exp:S.season,ten:S.day+10};p.tenN={tid,s:S.season,n};p.ask=0;
+  newTeamMood(p);
+}
+// each day: 10-day deals run out, and AI teams short on healthy bodies bring someone in
+function tenDays(){
+  for(const p of S.players.filter(x=>x.tid>=0&&x.contract&&x.contract.ten&&S.day>=x.contract.ten)){
+    if(p.tid===S.userTid)news(`${p.name}'s 10-day contract ran out. ${p.tenN.n>=2?'Another deal with you would have to run through the season.':'You can sign him to a second 10-day or for the rest of the season.'}`);
+    p.tid=-1;p.contract=null;p.ask=minFor(p);p.askYrs=1;
+  }
+  if(S.phase!=='regular'||S.day<TEN_FROM||S.day%3)return;
+  for(const t of S.teams){if(t.tid===S.userTid)continue;const ro=roster(t.tid);
+    if(ro.length>=15||ro.filter(p=>!p.inj).length>=12)continue;
+    const c=freeAgents().filter(p=>!tenWhy(t.tid,p)).sort((a,b)=>b.ovr-a.ovr)[0];if(c)signTen(t.tid,c)}
+}
 const pById=pid=>S.players.find(p=>p.pid===pid);
 const tname=tid=>T(tid).city+' '+T(tid).nick;
 const chip=tid=>`<span class="chip" style="background:${T(tid).hue<0?'hsl(0 0% 20%)':`hsl(${T(tid).hue} 58% 40%)`}">${T(tid).abbr}</span>`;
@@ -581,9 +615,11 @@ function viewPot(p){
 const scoutPot=p=>viewPot(p).v;
 const potGrade=v=>v>=72?'A':v>=67?'A-':v>=63?'B+':v>=59?'B':v>=55?'B-':v>=51?'C+':v>=47?'C':'D';
 const showV=x=>x.exact?`${x.v}`:`<span class="rng" title="Scouting estimate ${x.v}">${x.lo}–${x.hi}</span>`;
+// dead money on the books in season y (a stretched contract starts counting later and runs longer)
+const deadOn=(d,y)=>d.exp>=y&&(d.s==null||d.s<=y);
 function payroll(tid){
   const t=T(tid);
-  return r1(roster(tid).reduce((s,p)=>s+(p.contract?p.contract.amt:0),0)+t.dead.filter(d=>d.exp>=S.season).reduce((s,d)=>s+d.amt,0)+(tid===S.userTid&&S.phase==='freeagency'?holdsOf(tid):0));
+  return r1(roster(tid).reduce((s,p)=>s+(p.contract?p.contract.amt:0),0)+t.dead.filter(d=>deadOn(d,S.season)).reduce((s,d)=>s+d.amt,0)+(tid===S.userTid&&S.phase==='freeagency'?holdsOf(tid):0));
 }
 function teamOvr(tid){
   const ro=roster(tid).map(p=>p.ovr).sort((a,b)=>b-a),w=[4,3.5,3,2.5,2,1.5,1,.7,.5,.3];
@@ -1413,6 +1449,7 @@ function simDays0(n){
       }
     }
     if(cupOn())cupDay(S.day);
+    tenDays();
     accrueDay();
     if(S.day%7===6)S.teams.forEach(t=>{if(t.tid!==S.userTid)t.biz.price=goodPrice(t)}); // AI teams reprice weekly
     S.day++;
@@ -3040,7 +3077,7 @@ function devTraits(p){
 // last season's playing time, for players 24 and under
 function playDev(p){
   if(p.age>24||p.tid<0)return 0;
-  if(p.gl)return .6; // G League minutes
+  if(p.gl||p.tw)return .6; // G League minutes
   const g=p.st.gp,mpg=g?p.st.min/g:0;
   if(g>=20&&mpg>=24)return .8;
   if(g>=20&&mpg>=15)return .4;
@@ -3130,6 +3167,7 @@ const lottoChance=(L,t)=>lottoSlot(L,t)===1?LOTTO_W[lottoSeed(L,t)-1]/1000:lotto
 const pctTxt=p=>p>=.095?Math.round(p*100)+'%':(p*100).toFixed(1)+'%';
 function lottoDone(){
   const L=S.lotto;if(!L||L.done)return;L.done=true;L.at=L.order.length;
+  resolvePickRules();
   const u=S.userTid,seed=t=>lottoSeed(L,t),slot=t=>lottoSlot(L,t),win=L.order[0];
   let jump=null;
   for(const t of L.seeds){
@@ -3332,10 +3370,11 @@ function aiExtensions(chance){
     }
   }
 }
-function nextYearPayroll(tid){return r1(roster(tid).filter(p=>p.contract.exp>S.season||p.resign==='yes'||p.next).reduce((s,p)=>s+(p.contract.exp>S.season?salAt(p.contract,S.season+1):p.next?salAt(p.next,S.season+1):firstYr(p.ask,p.askYrs,raiseOf(p.ask,true))),0)+T(tid).dead.filter(d=>d.exp>S.season).reduce((s,d)=>s+d.amt,0))}
+function nextYearPayroll(tid){return r1(roster(tid).filter(p=>p.contract.exp>S.season||p.resign==='yes'||p.next).reduce((s,p)=>s+(p.contract.exp>S.season?salAt(p.contract,S.season+1):p.next?salAt(p.next,S.season+1):firstYr(p.ask,p.askYrs,raiseOf(p.ask,true))),0)+T(tid).dead.filter(d=>deadOn(d,S.season+1)).reduce((s,d)=>s+d.amt,0))}
 
 // ---------- free agency ----------
 function toFreeAgency(){
+  S.players.filter(p=>p.tw&&p.tid>=0).forEach(p=>{if(p.tid===S.userTid)news(`${p.name}'s two-way contract ended. He is a free agent.`);delete p.tw;p.tid=-1;p.contract=null;p.ask=minFor(p);p.askYrs=1});
   // extensions signed earlier take over from the expiring deal
   S.players.filter(p=>p.next&&p.contract&&p.contract.exp<=S.season).forEach(p=>{p.contract=p.next;delete p.next});
   teamOpts(S.userTid).forEach(p=>{const c=p.contract;if(c.ty&&c.ty[0]===S.season+1)c.ty.shift();else delete c.opt});
@@ -3420,6 +3459,7 @@ function excRows(tid){
 }
 function canSign(tid,p,room){
   const n=roster(tid).length,max=S.phase==='freeagency'?17:15;
+  if(p.bought&&p.bought.s===S.season&&p.bought.amt>MLE&&r1(payroll(tid)+p.ask)>APRON1)return {ok:false,why:`Teams above the ${money(APRON1)} first apron can't sign a player bought out this season whose salary was above the mid-level.`};
   if(n>=max&&!room)return {ok:false,why:`Roster is full (${max} max${S.phase==='freeagency'?' in the off-season':''}).`};
   const own=p.rights===tid,after=r1(payroll(tid)+firstYr(p.ask,p.askYrs,raiseOf(p.ask,own))-(own?holdOf(p):0)),e=exOf(tid);
   if(e.hard&&after>e.hard+.001)return {ok:false,why:`Hard-capped at ${money(e.hard)} this season after ${e.hardBy}. This signing would reach ${money(after)}.`};
@@ -3496,7 +3536,46 @@ function cuttable(tid){
   const ro=roster(tid).sort((a,b)=>b.ovr-a.ovr),top=new Set(ro.slice(0,8));
   return ro.filter(p=>!top.has(p)&&p.contract&&p.contract.amt<=3).sort((a,b)=>a.ovr-b.ovr)[0]||null;
 }
+// ---------- waivers, the stretch provision and buyouts ----------
+// a waived player with a contract can be claimed: worst record first, by a team with a roster spot that he'd crack the
+// top ten of, that likes the contract, and that can fit it (cap room, a traded player exception, or a minimum deal).
+// The claiming team takes over the contract and the old team owes nothing.
+function waiverClaim(p,from){
+  const c=p.contract;if(!c||c.amt<=MINSAL+.001)return null;
+  const amt=c.amt,order=S.teams.filter(t=>t.tid!==from&&t.tid!==S.userTid).sort((a,b)=>pct(a)-pct(b));
+  for(const t of order){const tid=t.tid,ro=roster(tid);if(ro.length>=15)continue;
+    const ovrs=ro.map(x=>x.ovr).sort((a,b)=>b-a);if(p.ovr<=(ovrs[9]??0))continue;
+    const pay=payroll(tid),x=pay+amt>CAP&&amt>minFor(p)+.001?tpeFit(tid,amt):null;
+    if(!(amt<=minFor(p)+.001||pay+amt<=CAP||x&&pay+amt<=APRON1))continue;
+    if(hardOf(tid)&&pay+amt>hardOf(tid))continue;
+    if(tradeValue(p,teamMode(tid),tid)<=0)continue;
+    if(x)x.amt=r1(Math.max(0,x.amt-amt));
+    return tid}
+  return null;
+}
+function claimTo(p,from,to){
+  p.tid=to;p.agg=aggUntil();p.acqTick=S.tick;delete p.next;newTeamMood(p);
+  news(`The ${tname(to)} claimed ${p.name} off waivers from the ${tname(from)}. They take over his contract${from===S.userTid?', so his salary comes off your books':''}.`);
+}
+// what's left on his deal, season by season
+const leftOn=c=>{const a=[];for(let y=S.season;y<=c.exp;y++)a.push(salAt(c,y));return a};
+// the stretch provision: the rest of the deal is spread over twice the years left plus one. In season, this year's
+// salary is still paid as normal and only the later years are stretched
+function stretchPlan(c){
+  const ys=leftOn(c),now=S.phase==='regular',fut=now?ys.slice(1):ys,n=fut.length;
+  if(!n)return null;
+  const st=now?S.season+1:S.season;
+  return {now:now?ys[0]:0,amt:r1(fut.reduce((s,x)=>s+x,0)/(2*n+1)),s:st,exp:st+2*n};
+}
+// a buyout: veterans on teams that aren't contending, and players who want out, give back some money to be free
+function buyoutOffer(p){
+  const c=p.contract,ys=leftOn(c),tot=r1(ys.reduce((s,x)=>s+x,0)),from=p.tid;
+  if(!(p.age>=29&&teamMode(from)!=='contending'||p.tradeReq||moodOf(p)<45))return {ok:false,why:`${p.name} won't give money back. Veterans on teams out of contention, or players who want out, take buyouts.`};
+  const give=r1(Math.min(tot*.4,Math.max(minFor(p),marketValue(p)*.6)));
+  return {ok:true,give,tot,amt:r1((tot-give)/ys.length),exp:c.exp};
+}
 function aiWaive(p){
+  const to=waiverClaim(p,p.tid);if(to!=null){claimTo(p,p.tid,to);return}
   const t=T(p.tid);if(p.contract.amt>MINSAL)t.dead.push({amt:p.contract.amt,exp:p.contract.exp,name:p.name});
   p.tid=-1;p.contract=null;delete p.next;p.tradeReq=false;p.ask=askFloor(p);p.askYrs=1;
 }
@@ -3509,10 +3588,17 @@ function minAsk(p){
 function roomOf(tid){return Math.max(MINSAL,CAP-payroll(tid),excMax(tid))}
 // the lowest a free agent will go: rotation players hold out for ~70% of their market value
 const askFloor=p=>p.ovr<48?minFor(p):r1(Math.max(minFor(p),marketValue(p)*.7));
-function release(p){
-  const t=T(p.tid);
-  if(p.contract&&p.contract.amt>MINSAL)t.dead.push({amt:p.contract.amt,exp:p.contract.exp,name:p.name});
-  news(`You released ${p.name}.`+(p.contract.amt>MINSAL?` ${money(p.contract.amt)} per year stays on the books through ${p.contract.exp}.`:''));
+// how: 'waive' (another team may claim him), 'stretch', 'buyout', or 'story' (a buyout the story already settled)
+function release(p,how='waive'){
+  const t=T(p.tid),c=p.contract,from=p.tid;
+  if(how==='waive'||how==='stretch'){const to=waiverClaim(p,from);if(to!=null){claimTo(p,from,to);return}}
+  const sp=how==='stretch'?stretchPlan(c):null,bo=how==='buyout'?buyoutOffer(p):null;
+  if(sp){if(sp.now)t.dead.push({amt:sp.now,exp:S.season,name:p.name});t.dead.push({amt:sp.amt,s:sp.s,exp:sp.exp,name:p.name+' (stretched)'});
+    news(`You waived and stretched ${p.name}: ${money(sp.amt)} a year on the books from ${sp.s} through ${sp.exp}${sp.now?`, plus this season's ${money(sp.now)}`:''}.`)}
+  else if(bo&&bo.ok){t.dead.push({amt:bo.amt,exp:bo.exp,name:p.name+' (buyout)'});p.bought={amt:c.amt,s:S.season};
+    news(`You bought out ${p.name}. He gave back ${money(bo.give)}; ${money(bo.amt)} a year stays on the books through ${bo.exp}.`)}
+  else{if(c&&c.amt>MINSAL)t.dead.push({amt:c.amt,exp:c.exp,name:p.name});if(how==='story')p.bought={amt:c.amt,s:S.season};
+    news(`You released ${p.name}.`+(c.amt>MINSAL?` ${money(c.amt)} per year stays on the books through ${c.exp}.`:''))}
   p.tid=-1;p.contract=null;delete p.next;p.ask=r1(Math.max(minFor(p),marketValue(p)*.7));p.askYrs=1;
 }
 function startSeason(){
@@ -3528,12 +3614,13 @@ function startSeason(){
   freeAgents().forEach(p=>p.ask=Math.min(p.ask,askFloor(p)));
   for(const t of S.teams){
     let ro=roster(t.tid);
-    if(t.tid!==S.userTid)while(ro.length>15){const w=ro.sort((a,b)=>a.ovr-b.ovr)[0];if(w.contract.amt>MINSAL)t.dead.push({amt:w.contract.amt,exp:w.contract.exp,name:w.name});w.tid=-1;w.contract=null;w.ask=MINSAL;ro=roster(t.tid)}
+    if(t.tid!==S.userTid)while(ro.length>15){const w=ro.sort((a,b)=>a.ovr-b.ovr)[0];aiWaive(w);if(w.tid===-1)w.ask=MINSAL;ro=roster(t.tid)}
     let filled=0;
     // filling to 13: the best player who'll take the minimum, else the best one this team can afford at his price
     while(roster(t.tid).length<13){
       const fa=freeAgents().sort((a,b)=>b.ovr-a.ovr),c=fa.find(p=>p.ask<=minFor(p)+.001)||(t.tid!==S.userTid&&fa.find(p=>canSign(t.tid,p).ok))||fa[fa.length-1];
       if(!c)break;const mn=minFor(c),amt=Math.max(mn,canSign(t.tid,c).ok?c.ask:mn);sign(t.tid,c,amt,amt>mn+.001?c.askYrs:1);filled++}
+    if(t.tid!==S.userTid)while(twoWays(t.tid).length<TW_MAX){const c=freeAgents().filter(p=>twOk(t.tid,p)).sort((a,b)=>b.pot-a.pot)[0];if(!c)break;signTwoWay(t.tid,c)}
     if(t.tid===S.userTid&&filled)news(`${filled} player${filled>1?'s':''} signed to minimum deals to reach 13.`);
     t.w=t.l=t.pf=t.pa=0;t.st=null;
     if(t.tid!==S.userTid&&t.staff.hc){const old=t.staff.hc.scheme,nw=bestScheme(t.tid),n=old?Object.keys(nw).filter(k=>old[k]!==nw[k]).length:0;t.staff.hc.scheme=nw;if(n)t.sfam=Math.max(.3,schemeFam(t.tid)-.1*n)} // AI coaches adapt to their new rosters
@@ -3600,7 +3687,51 @@ function addPicks(season){
   S.teams.forEach(t=>{for(const rd of [1,2])S.picks.push({id:S.nextPickId++,season,rd,orig:t.tid,owner:t.tid})});
 }
 const pickById=id=>S.picks.find(k=>k.id===id);
-const pickLabel=k=>`${k.season} ${k.rd===1?'1st':'2nd'} (${T(k.orig).abbr})`;
+const pickLabel=k=>`${k.season} ${k.rd===1?'1st':'2nd'} (${T(k.orig).abbr}${k.prot?`, top-${k.prot} protected`:''})`;
+// ---------- protected picks and swap rights ----------
+// a protected first stays with the team that traded it if it lands in the protected range; that team then owes its
+// next year's first instead, unprotected (or its second-rounders, if it no longer has that first)
+const PROTS=[[4,'Top-4'],[10,'Top-10'],[14,'Lottery (top-14)']];
+const protOk=k=>k.rd===1&&!k.prot&&(k.season>S.season||['regular','playoffs'].includes(S.phase));
+// the first a protected pick would roll over to, which its giver can't trade until the protection is settled
+const owedNext=(tid,k)=>S.picks.some(z=>z.prot&&z.from===tid&&z.orig===k.orig&&z.rd===1&&k.rd===1&&z.season===k.season-1);
+const swapSeasons=()=>[...new Set(S.picks.filter(k=>k.rd===1&&(k.season>S.season||['regular','playoffs'].includes(S.phase)&&k.season===S.season)).map(k=>k.season))].sort((a,b)=>a-b);
+const ownFirst=(tid,s)=>S.picks.find(k=>k.season===s&&k.rd===1&&k.orig===tid);
+// what a protected pick is worth: the unprotected outcomes, plus the rollover (about a mid-first next year) if it hits
+function protVal(k,act,slot,yrs,v){
+  const roll=slotValue(15)*.9;
+  if(act)return act<=k.prot?roll:v;
+  if(yrs===0&&slot<=14){const row=lottoTable()[slot-1];let ev=0,hit=0;row.forEach((p,i)=>{if(!i)return;if(i<=k.prot)hit+=p;else ev+=p*slotValue(i)});return ev+hit*roll}
+  const p=clamp((k.prot-slot+6)/12,0,1);return (1-p)*v+p*roll;
+}
+// the right to swap firsts with another team: worth the gap between the two picks when the other one projects better
+function swapVal(holder,grantor,s,mode,sl,viewer){
+  const kh=ownFirst(holder,s),kg=ownFirst(grantor,s);if(!kh||!kg)return 0;
+  return Math.max(0,pickValue(kg,mode,sl,viewer)-pickValue(kh,mode,sl,viewer))*.8+2;
+}
+// on lottery night: protections and swaps for this draft are settled, then the order follows the new owners
+function resolvePickRules(){
+  const o=S.draft&&S.draft.orig;if(!o)return;
+  const slotOf=k=>o.findIndex((x,j)=>x===k.orig&&(j<30)===(k.rd===1))+1,u=S.userTid;
+  for(const k of S.picks.filter(k=>k.season===S.season&&k.prot)){
+    const s=slotOf(k),giver=k.from,to=k.owner,mine=giver===u||to===u;
+    if(s<=k.prot&&giver!=null){
+      k.owner=giver;
+      const nx=S.picks.find(x=>x.season===S.season+1&&x.rd===1&&x.orig===k.orig);
+      if(nx&&nx.owner===giver){nx.owner=to;delete nx.prot;delete nx.from;if(mine)news(`The ${S.season} ${T(k.orig).abbr} first landed at No. ${s}, inside its top-${k.prot} protection: it stays with the ${tname(giver)}, and the ${tname(to)} get their ${S.season+1} first instead, unprotected.`)}
+      else{const twos=S.picks.filter(x=>x.owner===giver&&x.rd===2&&x.season>S.season).sort((a,b)=>a.season-b.season).slice(0,2);twos.forEach(x=>x.owner=to);
+        if(mine)news(`The ${S.season} ${T(k.orig).abbr} first landed at No. ${s}, inside its top-${k.prot} protection: it stays with the ${tname(giver)}, who send ${twos.length?`${twos.length} second-round pick${twos.length>1?'s':''}`:'nothing (no picks left)'} to the ${tname(to)} instead.`)}
+    }else if(mine)news(`The ${S.season} ${T(k.orig).abbr} first landed at No. ${s}, outside its top-${k.prot} protection, so it conveys to the ${tname(to)}.`);
+    delete k.prot;delete k.from;
+  }
+  for(const sw of (S.swaps||[]).filter(x=>x.season===S.season)){
+    const a=ownFirst(sw.holder,S.season),b=ownFirst(sw.grantor,S.season);
+    if(a&&b&&slotOf(b)<slotOf(a)){[a.owner,b.owner]=[b.owner,a.owner];if(sw.holder===u||sw.grantor===u)news(`The ${tname(sw.holder)} used their swap rights: they take the ${tname(sw.grantor)}' first (No. ${slotOf(b)}) for their own (No. ${slotOf(a)}).`)}
+    else if(sw.holder===u)news(`Your swap rights with the ${tname(sw.grantor)} went unused: your own first is the better pick.`);
+  }
+  S.swaps=(S.swaps||[]).filter(x=>x.season>S.season);
+  S.draft.order=o.map((x,i)=>{const k=S.picks.find(z=>z.season===S.season&&z.rd===(i<30?1:2)&&z.orig===x);return k?k.owner:x});
+}
 // projected slot per original team: 1 = worst. Blends record (as the season goes on) with roster rating.
 function pickSlots(){
   const byO=S.teams.slice().sort((a,b)=>teamOvr(a.tid)-teamOvr(b.tid));
@@ -3650,6 +3781,7 @@ function pickValue(k,mode,sl,tid){
   else{
     const act=draftSlotOf(k),slot=act||pickProj(k,sl);
     v=act?slotValue(act):yrs===0&&slot<=14?lottoEV(slot):slotValue(slot); // lottery teams: the whole range of outcomes
+    if(k.prot)v=protVal(k,act,slot,yrs,v);
     if(!isFut(k))v*=classMult(slot);
     else{let m=futMult(k,slot,tid);if(mode==='rebuilding')m=1+(m-1)*1.3;v*=m} // rebuilders lean hardest on the class
     top=slot<=10;
@@ -3720,7 +3852,8 @@ function chargeFloor(){
   for(const t of S.teams){const short=r1(fl-payroll(t.tid));if(short<=0)continue;
     t.biz.fin.exp.payroll+=short;if(t.tid===S.userTid)news(`Your payroll finished below the ${money(fl)} minimum team salary, so you paid the ${money(short)} shortfall to your players.`)}
 }
-function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null,cash=0){
+function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null,X=0){
+  const XO=typeof X==='object'&&X?X:{cash:X||0},cash=XO.cash||0,prot=XO.prot||{},swG=XO.swG||[],swY=XO.swY||[];
   const mp=mine.map(pById),tp=theirs.map(pById),mk=mPk.map(pickById),tk=tPk.map(pickById),reasons=[];
   const mode=ctx?ctx.mode:teamMode(otherTid),sl=ctx?ctx.sl:pickSlots();
   const sumAmt=a=>r1(a.reduce((s,p)=>s+p.contract.amt,0));
@@ -3744,6 +3877,7 @@ function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null,cash=0){
   if(cash<0&&(-cash>cashLeft(otherTid,'out')+.001||-cash>cashLeft(S.userTid,'in')+.001))reasons.push(`Teams can send and receive at most ${money(CASH_MAX)} in cash in trades each season.`);
   if(youAfter-(S.phase==='freeagency'?holdsOf(S.userTid):0)>ownerLimit()&&inn>out)reasons.push(`Your owner won't approve a payroll above ${money(ownerLimit())}. This deal would put you at ${money(youAfter)}.`);
   for(const [tid,out,inn] of [[S.userTid,mk,tk],[otherTid,tk,mk]]){
+    out.forEach(k=>{if(owedNext(tid,k))reasons.push(`The ${pickLabel(k)} pick is owed if last year's protected first lands in its protection, so it can't be traded until then.`)});
     const s=stepienIssue(tid,S.picks.filter(k=>k.owner===tid&&!out.includes(k)).concat(inn));if(s)reasons.push(s);
     const fz=out.find(k=>k.rd===1&&k.orig===tid&&k.season===farYear());
     if(fz&&(tid===S.userTid?youAfter:themAfter)>APRON2)reasons.push(`${tid===S.userTid?'You':T(tid).abbr} would be above the second apron, which freezes ${tid===S.userTid?'your':'their'} ${fz.season} first-round pick. It can't be traded.`);
@@ -3752,31 +3886,40 @@ function evalTrade(otherTid,mine,theirs,mPk=[],tPk=[],ctx=null,cash=0){
     for(const p of ps)if(lockOn(p))reasons.push(`${p.name} signed recently and can't be traded until ${calTxt(p.tlock)}.`);
     if(ps.length>1)for(const p of ps)if(aggOn(p))reasons.push(`${p.name} was just acquired, so he can't be packaged with other players until ${calTxt(p.agg)}. He can be traded on his own.`);
   }
-  const pv=a=>a.reduce((s,k)=>s+pickValue(k,mode,sl,otherTid),0);
+  const pv=a=>a.reduce((s,k)=>s+pickValue(k,mode,sl,otherTid),0),mkV=mk.map(k=>prot[k.id]&&protOk(k)?{...k,prot:prot[k.id]}:k);
+  const swV=(ss,aiHolds)=>ss.reduce((s,y)=>s+swapVal(aiHolds?otherTid:S.userTid,aiHolds?S.userTid:otherTid,y,mode,sl,otherTid),0);
+  for(const y of [...swG,...swY])if((S.swaps||[]).some(x=>x.season===y&&[x.holder,x.grantor].includes(S.userTid)&&[x.holder,x.grantor].includes(otherTid)))reasons.push(`You already have a ${y} swap with the ${tname(otherTid)}.`);
   // players beyond the number they send back are depth to them, worth 60%
   const inVals=mp.map(p=>tradeValue(p,mode,otherTid)).sort((a,b)=>b-a);
-  const get=inVals.reduce((s,v,i)=>s+(i>=Math.max(1,tp.length)&&v>0?v*.6:v),0)+pv(mk)-Math.max(0,mp.length-tp.length)*4;
-  const give=tp.reduce((s,p)=>s+tradeValue(p,mode,otherTid),0)+pv(tk);
+  const get=inVals.reduce((s,v,i)=>s+(i>=Math.max(1,tp.length)&&v>0?v*.6:v),0)+pv(mkV)+swV(swY,true)-Math.max(0,mp.length-tp.length)*4;
+  const give=tp.reduce((s,p)=>s+tradeValue(p,mode,otherTid),0)+pv(tk)+swV(swG,false);
   // the AI wants a small premium; ratio 1 means exactly enough
   const cv=Math.abs(cash)*.8; // cash is worth a little to a front office: $5M is about a second-round pick
   const need=(Math.max(0,give)+(cash<0?cv:0))*1.02+1,ratio=Math.max(0,get+(cash>0?cv:0))/need;
   const valueOk=ratio>1;
-  return {mode,out,inn,youAfter,themAfter,get,give,ratio,valueOk,legal:reasons.length===0,reasons,tpeUse,cash,empty:!mp.length&&!tp.length&&!mk.length&&!tk.length};
+  return {mode,out,inn,youAfter,themAfter,get,give,ratio,valueOk,legal:reasons.length===0,reasons,tpeUse,cash,empty:!mp.length&&!tp.length&&!mk.length&&!tk.length&&!swG.length&&!swY.length};
 }
 function proposeTrade(){
-  const tid=UI.tradeTid,mine=[...UI.tm],theirs=[...UI.tt],mk=[...UI.pm],tk=[...UI.pt],cash=UI.cash||0,e=evalTrade(tid,mine,theirs,mk,tk,null,cash);
+  const tid=UI.tradeTid,mine=[...UI.tm],theirs=[...UI.tt],mk=[...UI.pm],tk=[...UI.pt],X=tradeX(),e=evalTrade(tid,mine,theirs,mk,tk,null,X);
   if(e.empty){toast('Pick at least one player or draft pick.');return}
   if(!e.legal){toast(e.reasons[0]);return}
   if(!e.valueOk){toast(`${T(tid).abbr} turned it down. They want more value back.`);return}
-  doTrade(tid,mine,theirs,mk,tk,cash);
+  doTrade(tid,mine,theirs,mk,tk,X);
   toast('Trade accepted.');clearTrade();
 }
 const tradeNames=(ps,ks)=>[...ps.map(pid=>pById(pid).name),...ks.map(id=>pickLabel(pickById(id))+' pick')].join(', ')||'nothing';
-function doTrade(tid,mine,theirs,mk,tk,cash=0){
+// the extras on the trade screen: cash, protections on firsts you send, swap rights
+const tradeX=()=>({cash:UI.cash||0,prot:UI.prot||{},swG:[...(UI.swG||[])],swY:[...(UI.swY||[])]});
+function doTrade(tid,mine,theirs,mk,tk,X=0){
+  const XO=typeof X==='object'&&X?X:{cash:X||0},cash=XO.cash||0;
+  mk.forEach(id=>{const k=pickById(id),n=(XO.prot||{})[id];if(n&&protOk(k)){k.prot=n;k.from=S.userTid}});
+  (XO.swG||[]).forEach(s=>(S.swaps=S.swaps||[]).push({season:s,holder:S.userTid,grantor:tid}));
+  (XO.swY||[]).forEach(s=>(S.swaps=S.swaps||[]).push({season:s,holder:tid,grantor:S.userTid}));
+  const swTxt=[...(XO.swG||[]).map(s=>`the right to swap ${s} firsts`)],swTxtY=[...(XO.swY||[]).map(s=>`the right to swap ${s} firsts`)];
   const u0={pay:payroll(S.userTid),ovr:teamOvr(S.userTid)},ps=[...mine,...theirs].map(pById),avgAge=a=>a.length?a.reduce((s,p)=>s+p.age,0)/a.length:0;
   const bigDeal=ps.some(p=>p.ovr>=58)||[...mk,...tk].some(id=>pickById(id).rd===1),dAge=theirs.length&&mine.length?avgAge(theirs.map(pById))-avgAge(mine.map(pById)):0;
   jerseyTradeHit(mine);
-  news(`Trade with ${tname(tid)}: you sent ${tradeNames(mine,mk)}${cash>0?` and ${money(cash)} cash`:''} for ${tradeNames(theirs,tk)}${cash<0?` and ${money(-cash)} cash`:''}.`);
+  news(`Trade with ${tname(tid)}: you sent ${[tradeNames(mine,mk),...swTxtY].filter(x=>x!=='nothing'||!swTxtY.length).join(', ')}${cash>0?` and ${money(cash)} cash`:''} for ${[tradeNames(theirs,tk),...swTxt].filter(x=>x!=='nothing'||!swTxt.length).join(', ')}${cash<0?` and ${money(-cash)} cash`:''}.`);
   tradeCap(S.userTid,tid,mine.map(pById),theirs.map(pById));
   if(cash){const [from,to]=cash>0?[S.userTid,tid]:[tid,S.userTid],c=Math.abs(cash),add=(t,k)=>{const m=t.cash=t.cash||{},y=m[S.season]=m[S.season]||{};y[k]=r1((y[k]||0)+c)};
     add(T(from),'out');add(T(to),'in');T(from).biz.fin.exp.cash=r1((T(from).biz.fin.exp.cash||0)+c);T(to).biz.fin.rev.cash=r1((T(to).biz.fin.rev.cash||0)+c)}
@@ -3791,7 +3934,7 @@ function doTrade(tid,mine,theirs,mk,tk,cash=0){
   syncDraftOrder();
   if(S.phase==='draft')aiDraftUntilUser(); // if you traded away the pick on the clock, the new owner picks now
 }
-function clearTrade(){UI.tm.clear();UI.tt.clear();UI.pm.clear();UI.pt.clear();UI.cash=0}
+function clearTrade(){UI.tm.clear();UI.tt.clear();UI.pm.clear();UI.pt.clear();UI.cash=0;UI.prot={};UI.swG=new Set();UI.swY=new Set()}
 // after this year's picks change hands, the remaining draft order follows the new owners
 function syncDraftOrder(){
   if(!S.draft||!S.draft.orig||!['combine','draft'].includes(S.phase))return;
@@ -3864,6 +4007,7 @@ function aiLegal(a,b,aP,bP,aK,bK){
     const n=roster(tid).length-outP.length+inP.length;if(n<lim[0]||n>lim[1])return false;
     if(after>TAX+25&&inn>out)return false;
     if(stepienIssue(tid,S.picks.filter(k=>k.owner===tid&&!outK.includes(k)).concat(inK)))return false;
+    if(outK.some(k=>owedNext(tid,k)))return false;
   }
   return true;
 }
@@ -5296,7 +5440,7 @@ function storyFx(e,ev){
   if(e.block&&P)setBlk(P,'block');
   if(e.heal&&P)P.inj=null;
   if(e.hurt&&P&&!P.inj)injure(P);
-  if(e.release&&P&&P.tid===u){const amt=P.contract.amt;release(P);const d=T(u).dead[T(u).dead.length-1];if(d&&d.name===P.name&&d.amt===amt)d.amt=r1(amt*.75)}
+  if(e.release&&P&&P.tid===u){const amt=P.contract.amt;release(P,'story');const d=T(u).dead[T(u).dead.length-1];if(d&&d.name===P.name&&d.amt===amt)d.amt=r1(amt*.75)}
   if(e.open&&P&&P.tid===u)UI.player=P.pid;
 }
 function fireStory(){
@@ -5587,7 +5731,8 @@ function rosterActs(p){
   else if(extEligible(p)){const o=extOffer(p);ext+=o.ok?`<button class="btn small primary" data-act="extend" data-arg="${p.pid}">Extend ${money(o.amt)} × ${o.yrs}y</button> `:`<button class="btn small" disabled title="${esc(o.why)}">Won't extend</button> `}
   const gl=p.age<=24?`<button class="btn small${p.gl?' primary':''}" data-act="gleague" data-arg="${p.pid}" title="${p.gl?'Bring him back to the NBA rotation':'He skips NBA games but gets development minutes'}">${p.gl?'Recall':'G League'}</button> `:'';
   const cmp=`<button class="btn small${UI.cmp.includes(p.pid)?' primary':''}" data-act="cmp" data-arg="${p.pid}" aria-pressed="${UI.cmp.includes(p.pid)}" title="Compare side by side with another player">Compare</button> `;
-  return ext+gl+cmp+`<button class="btn small" data-act="release" data-arg="${p.pid}">Release</button>`;
+  const ten=p.contract&&p.contract.ten?`<span class="pill" title="Deal ${p.tenN?p.tenN.n:1} of 2 with you">10-day · ends day ${p.contract.ten+1}</span> `:'';
+  return ten+ext+gl+cmp+`<button class="btn small" data-act="release" data-arg="${p.pid}">Release</button>`;
 }
 // Stats, Contracts and Role views: name, position, age and overall, then the view's columns
 const p0=v=>v>0?`<span class="good">+${v}</span>`:v<0?`<span class="bad">${v}</span>`:'0';
@@ -5701,6 +5846,18 @@ function renderNeg(){
    <div class="row" style="flex-wrap:wrap;gap:.5rem"><button class="btn primary" data-act="negOffer" ${done?'disabled':''}>Make offer</button>${r&&r.r==='counter'?`<button class="btn" data-act="negTake">Accept ${money(r.amt)} × ${r.yrs}y</button>`:''}<span class="muted">${done?'No more offers today.':`${left} offer${left>1?'s':''} left today`}</span></div>
   </div></div>`;
 }
+function renderRel(){
+  const p=pById(UI.rel);if(!p||p.tid!==S.userTid||!p.contract){UI.rel=null;return ''}
+  const c=p.contract,ys=leftOn(c),tot=r1(ys.reduce((s,x)=>s+x,0)),sp=stretchPlan(c),bo=buyoutOffer(p),min=c.amt<=MINSAL+.001;
+  const opt=(k,label,txt,ok=true)=>`<div class="panel" style="padding:.7rem .9rem;gap:.4rem"><b>${label}</b><span class="muted" style="font-size:.9rem">${txt}</span><div><button class="btn small${k==='waive'?'':' primary'}" data-act="relDo" data-arg="${k}" ${ok?'':'disabled'}>${label}</button></div></div>`;
+  return `<div class="modal-bg" data-act="relClose"><div class="modal" role="dialog" aria-modal="true" aria-label="Release ${esc(p.name)}" data-act="modal">
+   <div class="spread"><h2>Release ${esc(p.name)}</h2><button class="btn" data-act="relClose" aria-label="Close">Close</button></div>
+   <p class="muted" style="margin:0">${p.pos} · ${p.age} · ovr ${p.ovr} · ${money(c.amt)} this season, ${money(tot)} left through ${c.exp}.</p>
+   ${opt('waive','Waive him',min?'A minimum contract: nothing stays on your books.':`You owe ${money(c.amt)} a year through ${c.exp}, unless another team claims him off waivers and takes over the contract.`)}
+   ${min?'':sp?opt('stretch','Waive and stretch',`If nobody claims him, the ${sp.now?'later years are':'rest of the deal is'} spread over ${sp.exp-sp.s+1} seasons: ${money(sp.amt)} a year from ${sp.s} through ${sp.exp}${sp.now?`, plus this season's ${money(sp.now)}`:''}. Less now, but it stays on the books longer.`):opt('stretch','Waive and stretch','Only this season is left, so there is nothing to stretch.',false)}
+   ${min?'':bo.ok?opt('buyout','Buy him out',`He gives back ${money(bo.give)} to become a free agent: ${money(bo.amt)} a year stays on your books through ${bo.exp}. No waiver claim. Teams above the first apron can't sign him this season.`):opt('buyout','Buy him out',esc(bo.why),false)}
+  </div></div>`;
+}
 function renderCompare(){
   const ps=UI.cmp.map(pById).filter(Boolean);if(ps.length<2){UI.cmpOpen=false;return ''}
   const team=p=>p.tid>=0?`${chip(p.tid)} ${esc(T(p.tid).abbr)}`:p.tid===-2?'Prospect':'Free agent';
@@ -5730,8 +5887,14 @@ function renderCompare(){
    <div class="row"><button class="btn" data-act="cmpClear">Clear and pick again</button></div>
   </div></div>`;
 }
+function twoWayBox(){
+  const u=S.userTid,tw=twoWays(u);
+  return `<div class="panel"><div class="spread"><h3>Two-way players</h3><span class="muted num">${tw.length}/${TW_MAX}</span></div>
+   <p class="muted" style="font-size:.85rem">Two-way contracts (${money(TW_SAL)}) don't count against your cap or the 15-man roster. These players spend the season in the G League and develop there. Sign them from the Free agents tab (under 4 years of service, 24 or younger); convert one to a standard minimum deal when you want him on the roster. From early January you can also sign free agents to 10-day contracts, twice per player, for injury cover.</p>
+   ${tw.length?tw.map(p=>`<p class="row" style="margin:.3rem 0">${plink(p.pid,p.name)} <span class="muted">${p.pos} · ${p.age} · ovr ${p.ovr} · pot ${scoutPot(p)}</span> <button class="btn small" data-act="twUp" data-arg="${p.pid}">Convert</button> <button class="btn small" data-act="twCut" data-arg="${p.pid}">Release</button></p>`).join(''):'<p class="muted">No two-way players.</p>'}</div>`;
+}
 function renderRoster(){
-  const u=S.userTid,all=roster(u),dead=T(u).dead.filter(d=>d.exp>=S.season),v=UI.rview||'ratings',pos=UI.rpos;
+  const u=S.userTid,all=roster(u),dead=T(u).dead.filter(d=>deadOn(d,S.season)),v=UI.rview||'ratings',pos=UI.rpos;
   const ro=pos.length?all.filter(p=>pos.includes(p.pos)):all,one=UI.cmp.length===1&&pById(UI.cmp[0]);
   const intro={ratings:`Pot is your scouts' estimate; ▲▼ mark skills that moved 2+ last summer. Players in the last two years of a deal can be extended during the season, and players on expiring deals during free agency; winning teams get a discount, losing teams may get turned down. Releasing a player keeps his full salary on your cap until the contract ends.`,
     dev:`Players 27 and under can follow a plan: about +1.5 a summer in the chosen skill (more with the matching specialist coach, see the Staff tab) and -0.2 in the others. A heavy workload adds 40% to the plan and +0.3 to every skill, but raises injury risk 15% and wears on players without a strong work ethic; light halves the plan, trims injury risk and keeps everyone happy. Plans stack with the team focus on the Staff tab.`,stats:'This season\'s numbers. GmSc is game score, a one-number summary of a box score line.',contracts:'',role:'Role comes from your rotation. Fit is how well he knows the system (newcomers need games and practice). Players judge their role by the minutes they actually get.'}[v];
@@ -5743,6 +5906,7 @@ function renderRoster(){
   ${v==='ratings'?playerRows(ro,{actions:rosterActs,trend:true}):rosterTable(ro,v)}
   ${v==='contracts'?contractNotes(all):''}
   ${rosterTalkLine(all)}</div>
+  ${twoWayBox()}
   ${renderDepth()}
   ${renderDevReport()}
   ${renderChem()}
@@ -5871,7 +6035,7 @@ const capHold=p=>{const a=p.contract.amt;return r1(clamp(a*(a<5?2:a<15?1.6:a<30?
 function capPlan(){
   const Y=S.season+1,u=S.userTid,ro=roster(u),sl=pickSlots();
   const contracts=ro.filter(p=>salaryIn(p,Y)>0).map(p=>({label:p.name,pid:p.pid,amt:salaryIn(p,Y)}));
-  const dead=T(u).dead.filter(d=>d.exp>=Y).map(d=>({label:`${d.name} (dead money)`,amt:d.amt}));
+  const dead=T(u).dead.filter(d=>deadOn(d,Y)).map(d=>({label:`${d.name} (dead money)`,amt:d.amt}));
   const holds=ro.filter(p=>salaryIn(p,Y)===0&&p.contract).map(p=>({p,amt:capHold(p),off:UI.renounce.has(p.pid)}));
   const picks=S.picks.filter(k=>k.owner===u&&k.season===Y-1&&k.rd===1).map(k=>({label:`${pickLabel(k)} pick (~#${pickProj(k,sl)})`,amt:rookieSal(pickProj(k,sl)-1)}));
   const adds=UI.planAdds.map((amt,i)=>({label:'Planned signing',amt,i}));
@@ -5885,13 +6049,13 @@ function renderCap(){
   const u=S.userTid,ro=roster(u).slice().sort((a,b)=>salaryIn(b,S.season)-salaryIn(a,S.season)||b.ovr-a.ovr),ys=[0,1,2,3,4].map(i=>S.season+i);
   const dead=T(u).dead.filter(d=>d.exp>=S.season);
   const cell=(p,y)=>{const v=salaryIn(p,y),c=p.contract,o=c&&c.opt&&y===c.exp?c.opt:c&&c.ty&&c.ty.includes(y)?'T':null;if(v)return `<td class="${p.contract&&y>p.contract.exp?'ext':''}">${v.toFixed(1)}${o?`<small class="muted" title="${optName(o)}"> ${o}O</small>`:''}</td>`;const last=p.next?p.next.exp:p.contract.exp;return `<td class="muted">${y===last+1?'FA':''}</td>`};
-  const rts=rightsOf(u),tot=y=>r1(ro.reduce((s,p)=>s+salaryIn(p,y),0)+dead.filter(d=>d.exp>=y).reduce((s,d)=>s+d.amt,0)+(y===S.season?holdsOf(u):0));
+  const rts=rightsOf(u),tot=y=>r1(ro.reduce((s,p)=>s+salaryIn(p,y),0)+dead.filter(d=>deadOn(d,y)).reduce((s,d)=>s+d.amt,0)+(y===S.season?holdsOf(u):0));
   const room=(line,y,label)=>`<tr><td class="l muted">${label}</td>${ys.map(z=>{const v=r1(line-tot(z));return `<td class="${v<0?'bad':'good'}">${v>0?'+':''}${v.toFixed(1)}</td>`}).join('')}</tr>`;
   const sheet=`<div class="panel"><div class="spread"><h2>Cap sheet</h2><span class="muted">Salaries in $M. Green italics are signed extensions. PO and TO mark a player or team option year.</span></div>
   <div class="scroll"><table class="capgrid"><thead><tr><th class="l">Player</th>${ys.map(y=>`<th>${y-1}-${String(y).slice(2)}</th>`).join('')}</tr></thead><tbody>
   ${ro.map(p=>`<tr><td class="l">${plink(p.pid,p.name)} <span class="muted">${p.pos} · ${p.age}</span></td>${ys.map(y=>cell(p,y)).join('')}</tr>`).join('')}
   ${rts.map(p=>`<tr><td class="l">${plink(p.pid,p.name)} <span class="muted">cap hold</span></td>${ys.map(y=>`<td class="muted">${y===S.season?holdOf(p).toFixed(1):''}</td>`).join('')}</tr>`).join('')}
-  ${dead.map(d=>`<tr><td class="l muted">${esc(d.name)} (dead money)</td>${ys.map(y=>`<td class="muted">${y<=d.exp?d.amt.toFixed(1):''}</td>`).join('')}</tr>`).join('')}
+  ${dead.map(d=>`<tr><td class="l muted">${esc(d.name)} (dead money)</td>${ys.map(y=>`<td class="muted">${deadOn(d,y)?d.amt.toFixed(1):''}</td>`).join('')}</tr>`).join('')}
   <tr class="total"><td class="l">Committed</td>${ys.map(y=>`<td>${tot(y).toFixed(1)}</td>`).join('')}</tr>
   ${room(CAP,0,`Room under cap (${money(CAP)})`)}${room(TAX,0,`Room under tax (${money(TAX)})`)}${room(APRON1,0,`Room under 1st apron (${money(APRON1)})`)}${room(APRON2,0,`Room under 2nd apron (${money(APRON2)})`)}
   </tbody></table></div><p class="muted">Future seasons assume today's cap, tax and aprons. "FA" marks the summer a player's deal runs out. Above the second apron you can't combine salaries in trades, use a mid-level exception, or trade your ${farYear()} first.</p></div>
@@ -6166,7 +6330,9 @@ function renderPlayerModal(){
     :`<div class="rbar"><span>${RLABEL[k]}</span><div class="meter"><i style="left:${x.lo}%;width:${x.hi-x.lo}%;opacity:.45"></i><u style="left:${x.v}%"></u></div><b class="num" style="font-size:.8rem">${x.lo}–${x.hi}</b></div>`};
   const unc=isUnc(p),vo=viewOvr(p),vp=viewPot(p);
   let contract='<span class="muted">No contract</span>';
-  if(p.contract){const c=p.contract;contract=`${money(c.amt)} ${c.r?'this season':'per year'} through ${c.exp}${c.r?` (${Math.round(c.r*100)}% raises, ${money(salAt(c,c.exp))} in the final year)`:''}${c.opt?`, ${optName(c.opt)} in ${c.exp}`:''}${c.ntc?', no-trade clause':''}${c.kick?`, ${Math.round(c.kick*100)}% trade kicker`:''}`}
+  if(p.contract&&p.tw)contract=`Two-way contract (${money(TW_SAL)}, off the cap) through ${p.contract.exp}. Playing in the G League.`;
+  else if(p.contract&&p.contract.ten)contract=`10-day contract (${money(p.contract.amt)}), ends day ${p.contract.ten+1}.`;
+  else if(p.contract){const c=p.contract;contract=`${money(c.amt)} ${c.r?'this season':'per year'} through ${c.exp}${c.r?` (${Math.round(c.r*100)}% raises, ${money(salAt(c,c.exp))} in the final year)`:''}${c.opt?`, ${optName(c.opt)} in ${c.exp}`:''}${c.ntc?', no-trade clause':''}${c.kick?`, ${Math.round(c.kick*100)}% trade kicker`:''}`}
   if(p.contract)contract+=(p.next?`<br><span class="good">Extension: ${money(p.next.amt)} per year through ${p.next.exp}</span>`:'');
   else if(p.tid===-1)contract=`Asking ${money(p.ask)} for ${p.askYrs} year${p.askYrs>1?'s':''}`+(p.rights===S.userTid?`<br><span class="good">You hold his ${p.rfa?'restricted free agent':birdOf(p).k} rights (cap hold ${money(holdOf(p))})</span>`:'')+(p.rfa&&p.rfa.tid!==S.userTid?`<br><span class="muted">Restricted free agent: the ${tname(p.rfa.tid)} can match any offer sheet.</span>`:'');
   if(p.tid>=-1){const sv=svcOf(p),own=p.tid>=0;contract+=`<br><span class="muted">${sv} year${sv===1?'':'s'} in the league · max ${money(maxFor(p,own))}${own&&superElig(p)?' (supermax eligible)':''}${own?` · ${birdOf(p).k} rights`:''} · minimum ${money(minFor(p))}</span>`;
@@ -6526,8 +6692,10 @@ function renderGameModal(){
 }
 function pickList(tid,set,act){
   const sl=pickSlots(),ks=S.picks.filter(k=>k.owner===tid).sort((a,b)=>a.season-b.season||a.rd-b.rd||a.orig-b.orig);
-  if(!ks.length)return '<p class="muted">No draft picks.</p>';
-  return `<div class="scroll"><table><thead><tr>${act?'<th></th>':''}<th class="l">Pick</th><th class="l">From</th><th class="l">Slot</th></tr></thead><tbody>${ks.map(k=>{const s=pickProj(k,sl)+(k.rd===2?30:0);return `<tr class="${set&&set.has(k.id)?'sel':''}">${act?`<td><input type="checkbox" class="check" id="${act}-${k.id}" data-act="${act}" data-arg="${k.id}" ${set.has(k.id)?'checked':''} aria-label="Select ${pickLabel(k)} pick"></td>`:''}<td class="l">${k.season} ${k.rd===1?'1st round':'2nd round'}</td><td class="l">${chip(k.orig)}${k.orig===tid?' <span class="muted">own</span>':''}</td><td class="l">${pickSlotText(k,sl)}</td></tr>`}).join('')}</tbody></table></div>`;
+  const swl=(S.swaps||[]).filter(x=>x.holder===tid||x.grantor===tid).map(x=>x.holder===tid?`Can swap ${x.season} firsts with the ${T(x.grantor).abbr}`:`The ${T(x.holder).abbr} can swap ${x.season} firsts with them`);
+  const swNote=swl.length?`<p class="muted" style="font-size:.85rem">${swl.join('. ')}.</p>`:'';
+  if(!ks.length)return '<p class="muted">No draft picks.</p>'+swNote;
+  return `<div class="scroll"><table><thead><tr>${act?'<th></th>':''}<th class="l">Pick</th><th class="l">From</th><th class="l">Slot</th></tr></thead><tbody>${ks.map(k=>{const s=pickProj(k,sl)+(k.rd===2?30:0);return `<tr class="${set&&set.has(k.id)?'sel':''}">${act?`<td><input type="checkbox" class="check" id="${act}-${k.id}" data-act="${act}" data-arg="${k.id}" ${set.has(k.id)?'checked':''} aria-label="Select ${pickLabel(k)} pick"></td>`:''}<td class="l">${k.season} ${k.rd===1?'1st round':'2nd round'}${k.prot?` <span class="pill" title="If it lands in the top ${k.prot}, it goes back to the ${T(k.from).abbr}, who owe their next first instead">Top-${k.prot} prot.</span>`:''}</td><td class="l">${chip(k.orig)}${k.orig===tid?' <span class="muted">own</span>':''}</td><td class="l">${pickSlotText(k,sl)}</td></tr>`}).join('')}</tbody></table></div>${swNote}`;
 }
 const classNote=()=>{const c=(S.cls||{})[S.season];return c&&c.q!=='normal'?` <span class="pill ${c.q==='deep'?'good':'warn'}">${c.q} class</span>`:''};
 function pickSlotText(k,sl){
@@ -6625,7 +6793,11 @@ function renderTradeBuild(){
   const keep=(set,ok)=>[...set].forEach(id=>{if(!ok(id))set.delete(id)});
   keep(UI.tm,id=>{const p=pById(id);return p&&p.tid===S.userTid});keep(UI.tt,id=>{const p=pById(id);return p&&p.tid===tid});
   keep(UI.pm,id=>{const k=pickById(id);return k&&k.owner===S.userTid});keep(UI.pt,id=>{const k=pickById(id);return k&&k.owner===tid});
-  const e=evalTrade(tid,[...UI.tm],[...UI.tt],[...UI.pm],[...UI.pt],null,UI.cash||0);
+  UI.swG=UI.swG||new Set();UI.swY=UI.swY||new Set();UI.prot=UI.prot||{};
+  const e=evalTrade(tid,[...UI.tm],[...UI.tt],[...UI.pm],[...UI.pt],null,tradeX());
+  const sws=swapSeasons().filter(s=>ownFirst(S.userTid,s)&&ownFirst(tid,s));
+  const swRow=(set,act,label)=>sws.length?`<p class="row" style="flex-wrap:wrap;gap:.3rem;margin:.4rem 0"><span class="muted" style="font-size:.85rem">${label}</span>${sws.map(s=>`<button class="btn small tog${set.has(s)?' on':''}" data-act="${act}" data-arg="${s}" aria-pressed="${set.has(s)}">${s}</button>`).join('')}</p>`:'';
+  const protRows=[...UI.pm].map(pickById).filter(k=>k&&protOk(k)).map(k=>`<p class="row" style="margin:.3rem 0"><label>${esc(pickLabel(k))} protection <select data-prot="${k.id}"><option value="0">None</option>${PROTS.map(([n,l])=>`<option value="${n}" ${UI.prot[k.id]===n?'selected':''}>${l}</option>`).join('')}</select></label></p>`).join('');
   const myTpe=e.tpeUse.find(x=>x.tid===S.userTid),cOut=Math.min(cashLeft(S.userTid,'out'),cashLeft(tid,'in')),cIn=Math.min(cashLeft(tid,'out'),cashLeft(S.userTid,'in'));
   const cashOpts=[...[7.9,7,6,5,4,3,2,1].filter(v=>v<=cIn+.001).map(v=>-v),0,...[1,2,3,4,5,6,7,7.9].filter(v=>v<=cOut+.001)];
   const modeTxt={contending:'Contending: values proven players now.',rebuilding:'Rebuilding: values youth, potential and cheap contracts. Discounts veterans.',middle:'In the middle: balances current ability and upside.'}[mode];
@@ -6649,9 +6821,9 @@ function renderTradeBuild(){
    <dl class="kv"><dt>You send</dt><dd>${money(e.out)}</dd><dt>You receive</dt><dd>${money(e.inn)}</dd><dt>Your payroll after</dt><dd class="${e.youAfter>TAX?'bad':e.youAfter>CAP?'warn':''}">${money(e.youAfter)}</dd><dt>${T(tid).abbr} payroll after</dt><dd>${money(e.themAfter)}</dd><dt><label for="tradeCash">Cash</label></dt><dd><select id="tradeCash">${cashOpts.map(v=>`<option value="${v}" ${v===(UI.cash||0)?'selected':''}>${v>0?`You send ${money(v)}`:v<0?`They send ${money(-v)}`:'None'}</option>`).join('')}</select></dd></dl>
    <p>${verdict}</p>
    <div class="row"><button class="btn primary" data-act="propose" ${open&&!e.empty?'':'disabled'}>Propose trade</button><button class="btn" data-act="tradeClear">Clear</button></div>
-   <p class="muted" style="font-size:.85rem">Teams over the cap after a trade can take back 200% of outgoing salary up to ${money(BAND1)}, outgoing plus ${money(BAND1)} up to ${money(BAND2)}, then 125%. Teams above the ${money(APRON1)} first apron can't take back more than they send; above the ${money(APRON2)} second apron they also can't combine players' salaries, and their furthest-out first is frozen. Hard-capped teams can't go over their hard cap. Free agents can't be traded until mid-December (three months if signed during the season), draft picks wait 30 days after signing, and players acquired in a trade can't be packaged with others for about two months. Rosters must stay between ${S.phase==='regular'?'13 and 15':'10 and 17'} players. No team can be left without a first-round pick in two straight future drafts. Sending out more salary than you take back while over the cap creates a traded player exception for a year, which can later take in salary without sending any back. Each team can send and receive up to ${money(CASH_MAX)} in cash a season. A trade kicker raises a player's salary when he's traded. A no-trade clause lets a player block deals except to contenders. Rebuilding teams value picks most, and every team prices future firsts by its own read of those draft classes; injured players are discounted.</p></div>
+   <p class="muted" style="font-size:.85rem">Teams over the cap after a trade can take back 200% of outgoing salary up to ${money(BAND1)}, outgoing plus ${money(BAND1)} up to ${money(BAND2)}, then 125%. Teams above the ${money(APRON1)} first apron can't take back more than they send; above the ${money(APRON2)} second apron they also can't combine players' salaries, and their furthest-out first is frozen. Hard-capped teams can't go over their hard cap. Free agents can't be traded until mid-December (three months if signed during the season), draft picks wait 30 days after signing, and players acquired in a trade can't be packaged with others for about two months. Rosters must stay between ${S.phase==='regular'?'13 and 15':'10 and 17'} players. No team can be left without a first-round pick in two straight future drafts. Sending out more salary than you take back while over the cap creates a traded player exception for a year, which can later take in salary without sending any back. Each team can send and receive up to ${money(CASH_MAX)} in cash a season. A trade kicker raises a player's salary when he's traded. A no-trade clause lets a player block deals except to contenders. You can protect a first you send (top-4, top-10 or lottery): if it lands in that range you keep it and owe your next first, unprotected. Swap rights let a team trade its first for the other team's if that one ends up better. Both are settled on lottery night. Rebuilding teams value picks most, and every team prices future firsts by its own read of those draft classes; injured players are discounted.</p></div>
   ${renderFinder()}
-  <div class="grid2"><div class="panel"><h3>Your players</h3><p class="muted">Shop a player to see the best offer from every team.</p>${playerRows(roster(S.userTid),{sel:UI.tm,selAct:'tm',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findShop" data-arg="${p.pid}">Shop</button>`})}<h3>Your picks</h3>${pickList(S.userTid,UI.pm,'pm')}</div><div class="panel"><h3>${T(tid).abbr} players</h3><p class="muted">Find an offer to see the cheapest packages they'd accept.</p>${playerRows(roster(tid),{sel:UI.tt,selAct:'tt',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findFor" data-arg="${p.pid}">Find offer</button>`})}<h3>${T(tid).abbr} picks</h3>${pickList(tid,UI.pt,'pt')}</div></div>`;
+  <div class="grid2"><div class="panel"><h3>Your players</h3><p class="muted">Shop a player to see the best offer from every team.</p>${playerRows(roster(S.userTid),{sel:UI.tm,selAct:'tm',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findShop" data-arg="${p.pid}">Shop</button>`})}<h3>Your picks</h3>${pickList(S.userTid,UI.pm,'pm')}${protRows?`<p class="muted" style="font-size:.85rem;margin-bottom:0">Protect a first you send: if it lands in the range, you keep it and owe your next year's first instead.</p>${protRows}`:''}${swRow(UI.swY,'swY',`Give the ${T(tid).abbr} swap rights:`)}</div><div class="panel"><h3>${T(tid).abbr} players</h3><p class="muted">Find an offer to see the cheapest packages they'd accept.</p>${playerRows(roster(tid),{sel:UI.tt,selAct:'tt',actions:p=>`${lockPill(p)}<button class="btn small" data-act="findFor" data-arg="${p.pid}">Find offer</button>`})}<h3>${T(tid).abbr} picks</h3>${pickList(tid,UI.pt,'pt')}${swRow(UI.swG,'swG','Ask for swap rights:')}</div></div>`;
 }
 // your own free agents in the summer: re-sign with Bird rights or renounce
 function rightsBox(){
@@ -6669,7 +6841,7 @@ function renderFA(){
   <div class="row" role="group" aria-label="Position">${POSL.map(x=>`<button class="btn small tog${UI.faPos.includes(x)?' on':''}" data-act="faPos" data-arg="${x}" aria-pressed="${UI.faPos.includes(x)}">${x}</button>`).join('')}</div>
   <div class="row" role="group" aria-label="Strong in"><span class="muted" style="font-size:.85rem">Strong in:</span>${RK.map(k=>`<button class="btn small tog${UI.faSkill===k?' on':''}" data-act="faSkill" data-arg="${k}" aria-pressed="${UI.faSkill===k}" title="${SKILL_NAME[k]}: the league's top quarter">${RLABEL[k]}</button>`).join('')}${UI.faPos.length||UI.faSkill?' <button class="btn small" data-act="faClear">Clear filters</button>':''}</div>
   ${fa.length&&!faFiltered(fa).length?'<p class="muted">No free agents match. Clear a filter.</p>':''}
-  ${fa.length?playerRows(faFiltered(fa).sort((a,b)=>UI.faSkill?viewR(b,UI.faSkill).v-viewR(a,UI.faSkill).v:b.ovr-a.ovr).slice(0,80),{actions:p=>{const c=canSign(S.userTid,p);return `${p.rfa&&p.rfa.tid!==S.userTid?`<span class="pill" title="Restricted free agent: the ${T(p.rfa.tid).nick} can match your offer sheet">RFA · ${T(p.rfa.tid).abbr}</span> `:''}<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok&&canAct?'':'disabled'} title="${esc(c.why)}">Sign ${c.yrs||p.askYrs}y</button> <button class="btn small" data-act="neg" data-arg="${p.pid}" ${canAct?'':'disabled'} title="Offer your own salary, years and option">Negotiate</button>`}}):'<p class="muted">No free agents available.</p>'}</div>`;
+  ${fa.length?playerRows(faFiltered(fa).sort((a,b)=>UI.faSkill?viewR(b,UI.faSkill).v-viewR(a,UI.faSkill).v:b.ovr-a.ovr).slice(0,80),{actions:p=>{const c=canSign(S.userTid,p);return `${p.rfa&&p.rfa.tid!==S.userTid?`<span class="pill" title="Restricted free agent: the ${T(p.rfa.tid).nick} can match your offer sheet">RFA · ${T(p.rfa.tid).abbr}</span> `:''}<button class="btn small" data-act="sign" data-arg="${p.pid}" ${c.ok&&canAct?'':'disabled'} title="${esc(c.why)}">Sign ${c.yrs||p.askYrs}y</button> <button class="btn small" data-act="neg" data-arg="${p.pid}" ${canAct?'':'disabled'} title="Offer your own salary, years and option">Negotiate</button>${twOk(S.userTid,p)?` <button class="btn small" data-act="twSign" data-arg="${p.pid}" title="Off the cap and the 15-man roster; he develops in the G League">Two-way</button>`:''}${S.phase==='regular'&&S.day>=TEN_FROM?` <button class="btn small" data-act="tenSign" data-arg="${p.pid}" ${tenWhy(S.userTid,p)?'disabled':''} title="${esc(tenWhy(S.userTid,p)||`A prorated minimum for 10 days (${money(r1(Math.max(.1,minFor(p)*10/SEASON_DAYS)))})`)}">10-day</button>`:''}`}}):'<p class="muted">No free agents available.</p>'}</div>`;
 }
 // combine slots for one prospect, and what they've told you
 function combineBtns(p){
@@ -6806,7 +6978,7 @@ function render(){showTip(null);
   if(S.awNight!=null&&!UI.cer)UI.cer={s:S.awNight,i:0,open:{}};
   if(S.wrapNight!=null&&!UI.wrap)UI.wrap={s:S.wrapNight,i:0};
   if(S.phase==='lottery'&&S.lotto&&!S.lotto.done&&S.wrapNight==null&&UI.lotSeen!==S.lotto.s){UI.lotSeen=S.lotto.s;UI.lot={auto:false,spd:UI.lotSpd||1}} // lottery night opens on its own once a season
-  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.neg?renderNeg():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.ownShow?renderOwnModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
+  app.innerHTML=renderHeader()+renderNav()+`<main class="main wrap">${RENDER[UI.tab]()}</main>`+(S.fired?renderFired():UI.live?renderLive():UI.ask?renderAsk():UI.cer?renderCeremony():UI.wrap?renderWrap():UI.lot?renderLot():UI.neg?renderNeg():UI.rel!=null?renderRel():UI.player!=null?renderPlayerModal():UI.cmpOpen?renderCompare():UI.game!=null?renderGameModal():UI.offers?renderOffersModal():UI.pressShow?renderPressModal():UI.bizShow?renderBizModal():UI.ownShow?renderOwnModal():UI.alerts?renderAlertsModal():UI.settings?renderSettingsModal():'');
   if(UI.offers||UI.tab==='home')UI.offerViewed=Math.max(UI.offerViewed||0,...liveOffers().map(o=>o.id));
   if(S.presser&&(UI.pressShow||UI.tab==='home'))UI.pressViewed=Math.max(UI.pressViewed||0,S.presser.id||0);
   if(UI.tab==='home'||UI.tab==='roster')UI.lrViewed=Math.max(UI.lrViewed||0,S.lr?S.lr.id:0);
@@ -6934,9 +7106,16 @@ document.addEventListener('click',e=>{
     case 'negOffer':{const g=UI.neg,p=pById(g.pid);negRead();const r=negotiate(p,g.amt,g.yrs,g.opt);g.res=r;
       if(r.r==='yes'){UI.neg=null;negClose(p,r.amt,r.yrs,r.opt)}break}
     case 'negTake':{const g=UI.neg,p=pById(g.pid),r=g.res;if(!r||r.r!=='counter')break;const bad=negCheck(p,r.amt,r.yrs);if(bad){g.res={r:'err',why:bad};break}UI.neg=null;negClose(p,r.amt,r.yrs,r.opt);break}
-    case 'release':{const p=pById(num);if(roster(S.userTid).length<=(S.phase==='regular'?13:0)){toast('You need at least 13 players during the season. Sign someone first.');break}release(p);break}
+    case 'twSign':{const p=pById(num),u=S.userTid;if(!twOk(u,p)){toast(`Two-way deals are for players with under 4 years of service, 24 or younger, and you have ${TW_MAX} slots.`);break}signTwoWay(u,p);news(`You signed ${p.name} to a two-way contract. He develops in the G League and doesn't count against your cap or roster.`);toast(`Signed ${p.name} (two-way).`);break}
+    case 'twUp':{const p=pById(num),u=S.userTid;if(roster(u).length>=(S.phase==='regular'?15:17)){toast('Your roster is full. Release someone first.');break}delete p.tw;p.gl=false;p.tid=-1;sign(u,p,minFor(p),2);news(`You converted ${p.name}'s two-way deal to a standard 2-year minimum contract.`);toast(`${p.name} is on the main roster.`);break}
+    case 'twCut':{const p=pById(num);delete p.tw;p.tid=-1;p.contract=null;p.gl=false;p.ask=minFor(p);p.askYrs=1;news(`You released ${p.name} from his two-way contract.`);break}
+    case 'tenSign':{const p=pById(num),u=S.userTid,w=tenWhy(u,p);if(w){toast(w);break}signTen(u,p);news(`You signed ${p.name} to a 10-day contract (deal ${p.tenN.n} of 2).`);toast(`Signed ${p.name} for 10 days.`);break}
+    case 'release':{const p=pById(num);if(roster(S.userTid).length<=(S.phase==='regular'?13:0)){toast('You need at least 13 players during the season. Sign someone first.');break}UI.rel=num;UI.player=null;break}
+    case 'relClose':UI.rel=null;break;
+    case 'relDo':{const p=pById(UI.rel);UI.rel=null;if(!p||p.tid!==S.userTid)break;if(arg==='buyout'&&!buyoutOffer(p).ok)break;release(p,arg);break}
     case 'sort':if(UI.sort===arg)UI.sortDir*=-1;else{UI.sort=arg;UI.sortDir=arg==='name'?1:-1}break;
     case 'tm':case 'tt':case 'pm':case 'pt':{const s=UI[act];s.has(num)?s.delete(num):s.add(num);break}
+    case 'swG':case 'swY':{const s=UI[act]=UI[act]||new Set();s.has(num)?s.delete(num):s.add(num);break}
     case 'tradeClear':clearTrade();break;
     case 'tradeAdd':{const [k,id]=arg.split(':');(k==='p'?UI.tm:UI.pm).add(Number(id));break}
     case 'propose':proposeTrade();UI.finder=null;break;
@@ -7038,6 +7217,7 @@ document.addEventListener('change',e=>{
   if(UI.neg&&['negAmt','negYrs','negOpt'].includes(el.id)){negRead();const s=document.getElementById('negSum'),p=pById(UI.neg.pid);if(s&&p)s.innerHTML=negSummary(p,UI.neg);return}
   if(el.id==='tradeTeam'){UI.tradeTid=Number(el.value);UI.tt.clear();UI.pt.clear();UI.cash=0;render();return}
   if(el.id==='tradeCash'){UI.cash=Number(el.value)||0;render();return}
+  if(el.dataset.prot){UI.prot=UI.prot||{};const v=Number(el.value);if(v)UI.prot[el.dataset.prot]=v;else delete UI.prot[el.dataset.prot];render();return}
   if(el.dataset.tf){const f=tfState(),k=el.dataset.tf;f[k]=el.type==='checkbox'?el.checked:el.value.trim();f.n=TF_DEF.n;render();return}
   if(el.dataset.dp){setPlan(pById(Number(el.dataset.dp)),el.value);save();render();return}
   if(el.dataset.dpi){const p=pById(Number(el.dataset.dpi)),d=planOf(p);if(d)setPlan(p,d.k,el.value);save();render();return}
