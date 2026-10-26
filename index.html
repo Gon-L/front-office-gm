@@ -1141,6 +1141,7 @@ function teamCtx(tid,b2b){
     drop3:sch.def==='drop'?.006:0,dropIn:sch.def==='drop'?-.004-(big-L.big)*.0006:0,
     // medical staff: injury risk and recovery
     injM:clamp(1.15-(med-40)*.008,.7,1.2),medHeal:clamp((med-50)/100,0,.4)+(tr.med==='rehab'?.25:0),box:new Map(ros.map(x=>[x.p.pid,{min:0,pts:0,reb:0,ast:0,stl:0,blk:0,tov:0,fgm:0,fga:0,tpm:0,tpa:0,ftm:0,fta:0,pf:0,pm:0,cp:0,cfm:0,cfa:0}]))}; // c*: clutch-time points and shots
+  const pf=formOf(tid);if(pf){C.offT+=pf.o;C.hcD+=pf.d} // playoff streak, see drawForm
   return C;
 }
 // team ratings follow whoever is on the floor
@@ -3025,6 +3026,26 @@ function moodTag(p){
   if(p.tradeReq)return '<span class="pill bad">Wants out</span>';
   return m>=70?'<span class="pill good">Happy</span>':m>=45?'<span class="pill muted">Content</span>':'<span class="pill warn">Unhappy</span>';
 }
+// ---------- playoff form ----------
+// every playoff round (and the play-in) each team draws a streak that lasts the round: shooters on a heater or gone cold,
+// a defense locked in or leaking. One draw per round rather than per game, so it doesn't average out over a series;
+// without it the best team won about two titles in three
+const FORM_SD=.042,FORM_MAX=.1;
+const formOf=tid=>S.phase==='playoffs'&&S.po&&S.po.form&&S.po.form[tid]||null;
+const formTot=f=>f?f.o+f.d:0;
+function drawForm(tids,rd){
+  const f=()=>clamp(randn()*FORM_SD,-FORM_MAX,FORM_MAX);
+  S.po.form={};for(const tid of tids)S.po.form[tid]={o:f(),d:f()};
+  const u=S.userTid,when=rd<0?'the play-in':rd===3?'the Finals':'the '+ROUND_NAMES[rd].toLowerCase();
+  for(const tid of tids){
+    const x=S.po.form[tid],k=Math.abs(x.o)>=Math.abs(x.d)?'o':'d',v=x[k];
+    if(Math.abs(v)<.05||tid!==u&&!(rd>=2&&Math.abs(formTot(x))>=.08))continue;
+    const who=tid===u?'Your':`The ${T(tid).nick}'`+(T(tid).nick.endsWith('s')?'':'s');
+    const what=k==='o'?(v>0?'shooters are scorching':'shooters have gone cold'):(v>0?'defense is locked in':'defense has sprung leaks');
+    news(`${who} ${what} going into ${when}.`);
+  }
+}
+const formPill=tid=>{const v=formTot(formOf(tid));return v>=.06?' <span class="pill good" title="On a hot streak this round">Hot</span>':v<=-.06?' <span class="pill bad" title="In a cold spell this round">Cold</span>':''};
 function startPlayoffs(){
   giveAwards();
   seasonRecords();
@@ -3032,6 +3053,7 @@ function startPlayoffs(){
   const E=confStand('E').map(t=>t.tid),W=confStand('W').map(t=>t.tid);
   S.po={pi:newPlayIn(E,W),rounds:[],champ:null,seeded:[...E.slice(0,6),...W.slice(0,6)]};
   S.phase='playoffs';
+  drawForm([...E.slice(6,10),...W.slice(6,10)],-1);
   const u=S.userTid,s=(T(u).conf==='E'?E:W).indexOf(u)+1;
   news(s<=6?`${tname(u)} clinched the ${s} seed in the ${T(u).conf==='E'?'East':'West'}. The play-in decides the 7 and 8 seeds.`
     :s<=10?`${tname(u)} finished ${ordinal(s)} in the ${T(u).conf==='E'?'East':'West'} and go to the play-in${s<=8?': win one of two games to make the playoffs':': two wins in a row, or the season is over'}.`
@@ -3076,6 +3098,7 @@ function finishPlayIn(){
   for(const conf of ['E','W']){const a=P.g.find(g=>g.conf===conf&&g.k==='78'),f=P.g.find(g=>g.conf===conf&&g.k==='8');sd[conf]=[...P.seeds[conf].slice(0,6),a.w,f.w]}
   const mk=(s,conf)=>[[0,7],[3,4],[1,6],[2,5]].map(([i,j])=>({a:s[i],b:s[j],sa:i+1,sb:j+1,wa:0,wb:0,conf}));
   S.po.rounds=[[...mk(sd.E,'E'),...mk(sd.W,'W')]];
+  drawForm(S.po.rounds[0].flatMap(s=>[s.a,s.b]),0);
   S.po.seeded=[...sd.E,...sd.W];
   news(`Play-in: the ${T(sd.E[6]).nick} and ${T(sd.E[7]).nick} take the East's 7 and 8 seeds; the ${T(sd.W[6]).nick} and ${T(sd.W[7]).nick} take the West's.`);
   checkPromises(true);
@@ -3118,7 +3141,7 @@ function simPlayoffDay0(){
       const A=aFirst?x:y,B=aFirst?y:x;
       nxt.push({a:A,b:B,sa:seedOf(A),sb:seedOf(B),wa:0,wb:0,conf:cur.length===2?'F':T(A).conf});
     }
-    S.po.rounds.push(nxt);
+    S.po.rounds.push(nxt);drawForm(nxt.flatMap(s=>[s.a,s.b]),S.po.rounds.length-1);
   }
 }
 const ROUND_NAMES=['First round','Conference semifinals','Conference finals','Finals'];
@@ -7902,11 +7925,12 @@ function renderPlayoffs(){
   if(!S.po)return `<div class="panel"><h2>Playoffs</h2><p class="muted">The bracket appears when the regular season ends. Seeds 1 to 6 in each conference qualify; seeds 7 to 10 play in for the last two spots.</p></div>`;
   const names=['First round','Conf. semifinals','Conf. finals','Finals'];
   const next=s=>sDone(s)?'':s.wa+s.wb===6?' <span class="pill bad">Game 7 next</span>':s.wa===3||s.wb===3?' <span class="pill warn">Elimination game next</span>':'';
-  const ser=s=>`<div class="series"><div class="${s.wa===4?'w':''}"><span>${chip(s.a)} <small class="muted">${s.sa}</small></span><b class="num">${s.wa}</b></div><div class="${s.wb===4?'w':''}"><span>${chip(s.b)} <small class="muted">${s.sb}</small></span><b class="num">${s.wb}</b></div>${s.story?`<span class="story">${esc(s.story)}</span>`:next(s)}</div>`;
+  const ser=s=>`<div class="series"><div class="${s.wa===4?'w':''}"><span>${chip(s.a)} <small class="muted">${s.sa}</small>${sDone(s)?'':formPill(s.a)}</span><b class="num">${s.wa}</b></div><div class="${s.wb===4?'w':''}"><span>${chip(s.b)} <small class="muted">${s.sb}</small>${sDone(s)?'':formPill(s.b)}</span><b class="num">${s.wb}</b></div>${s.story?`<span class="story">${esc(s.story)}</span>`:next(s)}</div>`;
   const fm=S.po.fmvp!=null&&pById(S.po.fmvp);
   return `<div class="panel"><div class="spread"><h2>${S.season} playoffs</h2>${S.po.champ!=null?`<span>${chip(S.po.champ)} <b>${tname(S.po.champ)}</b> are champions${fm?` · Finals MVP ${plink(fm.pid,fm.name)} <span class="muted">(${lineText(S.po.fst[fm.pid])})</span>`:''}</span>`:''}</div>
   ${S.po.pi?playInBox():''}
-  <div class="scroll"><div class="bracket">${names.map((n,i)=>`<div style="display:grid;gap:.5rem;align-content:start"><h3>${n}</h3>${(S.po.rounds[i]||[]).map(ser).join('')||'<span class="muted">TBD</span>'}</div>`).join('')}</div></div></div>
+  <div class="scroll"><div class="bracket">${names.map((n,i)=>`<div style="display:grid;gap:.5rem;align-content:start"><h3>${n}</h3>${(S.po.rounds[i]||[]).map(ser).join('')||'<span class="muted">TBD</span>'}</div>`).join('')}</div></div>
+  ${S.po.champ==null?'<p class="muted" style="font-size:.88rem">Teams run hot and cold in the playoffs: each round, every team catches a streak that lasts the series. Hot and Cold tags mark the big ones.</p>':''}</div>
   ${S.lastBox&&S.lastBox.label.includes('playoffs')?`<div class="panel"><div class="spread"><h3>Your last playoff game</h3>${S.lastBox.id&&gameLog(S.lastBox.id)?`<button class="btn small" data-act="game" data-arg="${S.lastBox.id}">Game page</button>`:''}</div>${S.lastBox.recap?`<p>${esc(S.lastBox.recap)}</p>`:''}${renderBox()}</div>`:''}`;
 }
 // names of award winners, kept after they retire and leave S.players
