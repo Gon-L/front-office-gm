@@ -1547,8 +1547,9 @@ function simDays0(n){
     for(let v=officeDay(S.day-1)+1;v<=officeDay(S.day);v++){
       S.vday=v;S.tick++;
       if(v%7===0)scoutWeek();
-      if(S.tick%7===0)makeOffers();
-      if(S.tick%4===0)aiTrades();
+      const rush=S.day>=deadlineDay()-15; // the last two weeks before the deadline, everyone is on the phone
+      if(S.tick%(rush?3:7)===0)makeOffers();
+      if(S.tick%(rush?2:4)===0)aiTrades();
       rumorMill();
       freeAgents().forEach(p=>{if(p.inj&&--p.inj.g<=0)p.inj=null});
       if(v%10===0)aiExtensions(.08);
@@ -3451,6 +3452,7 @@ const mediaRanks=month=>Object.fromEntries(prospects().sort((a,b)=>consensusScor
 // your board also uses what interviews and medicals told you
 const yourScore=p=>viewOvr(p).v*.4+viewPot(p).v*.6+(p.int?(p.we-50)*.04:0)-(p.med!=null&&p.med<35?1.5:0);
 function aiPick(){
+  aiDraftTrade();
   const tid=S.draft.order[S.draft.idx];
   const best=prospects().map(p=>({p,s:aiBoardScore(tid,p)})).sort((a,b)=>b.s-a.s)[0];
   draftPlayer(best.p,tid);
@@ -3462,7 +3464,7 @@ function aiDraftUntilUser(){
 function finishDraft(){
   {const dm=S.owner&&S.owner.dm;if(dm&&dm.k==='draft'){const tg=pById(dm.d.pid),mine=tg&&tg.tid===S.userTid;
     dmSettle(mine||dm.lvl==='half'&&!dm.d.seen,!mine&&tg&&tg.tid>=0?`The ${tname(tg.tid)} took him.`:'')}}
-  S.picks=S.picks.filter(k=>k.season!==S.season);
+  S.picks=S.picks.filter(k=>k.season!==S.season);S.aiTrades=0;
   prospects().forEach(p=>{p.tid=-1;p.ask=MINSAL;p.askYrs=2;p.rookieSeason=S.season+1;p.svc0=0});
   S.phase='resign';
   optionsSummer();
@@ -4353,9 +4355,15 @@ function makeOffers(){
   // an AI team shopping its unhappy player
   const req=S.players.find(p=>p.tradeReq&&p.tid>=0&&p.tid!==S.userTid&&!S.offers.some(o=>o.tt.includes(p.pid)));
   if(req&&rnd()<.6){const c=shopOffer(req.tid,req);if(c){S.offers.push({id:S.nextOfferId++,tid:req.tid,tm:c.tm,pm:c.pm,tt:[req.pid],pt:[],exp:S.tick+7,kind:'shop'});news(`Rumor: the ${tname(req.tid)} have called you about ${req.name}, who wants out.`)}}
-  // a team that likes one of your players
-  const tid=ais[0],mode=teamMode(tid);
-  const targets=roster(S.userTid).filter(p=>(!p.inj||p.inj.g<10)&&blkOf(p)!=='untouch'&&!lockOn(p)).sort((a,b)=>tradeValue(b,mode,tid)-tradeValue(a,mode,tid)).slice(1,6);
+  // a team that likes one of your players: near the deadline a contender or a team in the race, asking first about
+  // players at the position it is thinnest at
+  const rush=S.phase==='regular'&&S.day>=deadlineDay()-15,buy=rush?ais.filter(t=>teamMode(t)==='contending'||inRaceAI(t)):[];
+  const tid=buy.length?buy[0]:ais[0],mode=teamMode(tid);
+  const cnt={g:0,w:0,b:0};roster(tid).sort((a,b)=>b.ovr-a.ovr).slice(0,9).forEach(p=>cnt[posGrp(p)]++);
+  const thin=Object.keys(cnt).sort((a,b)=>cnt[a]-cnt[b])[0],fifth=roster(tid).map(p=>p.ovr).sort((a,b)=>b-a)[4]||0;
+  const ok=p=>(!p.inj||p.inj.g<10)&&blkOf(p)!=='untouch'&&!lockOn(p);
+  const fit=roster(S.userTid).filter(p=>ok(p)&&posGrp(p)===thin&&p.ovr>fifth).sort((a,b)=>tradeValue(b,mode,tid)-tradeValue(a,mode,tid)).slice(0,3);
+  const targets=fit.length&&rnd()<.7?fit:roster(S.userTid).filter(ok).sort((a,b)=>tradeValue(b,mode,tid)-tradeValue(a,mode,tid)).slice(1,6);
   const tgt=targets.length?pick(targets):null;
   if(tgt&&!S.offers.some(o=>o.tm.includes(tgt.pid))){const o=offerFor(tid,tgt.pid);if(o){S.offers.push({id:S.nextOfferId++,tid,tm:[tgt.pid],pm:[],tt:o.tt,pt:o.pt,exp:S.tick+7,kind:'interest'});news(`Rumor: ${tgt.name} is drawing interest. The ${tname(tid)} have made an offer.`)}}
   // players you put on the block
@@ -4375,7 +4383,7 @@ function sideOk(tid,ctx,inP,inK,outP,outK){
   const inVals=inP.map(p=>tradeValue(p,ctx.mode,tid)).sort((a,b)=>b-a);
   const get=inVals.reduce((s,v,i)=>s+(i>=Math.max(1,outP.length)&&v>0?v*.6:v),0)+inK.reduce((s,k)=>s+pickValue(k,ctx.mode,ctx.sl,tid),0)-Math.max(0,inP.length-outP.length)*4;
   const give=outP.reduce((s,p)=>s+tradeValue(p,ctx.mode,tid),0)+outK.reduce((s,k)=>s+pickValue(k,ctx.mode,ctx.sl,tid),0);
-  return {ok:get>=Math.max(0,give)*.97,surplus:get-give,get};
+  return {ok:get>=Math.max(0,give)*(ctx.ok||.97),surplus:get-give,get};
 }
 // salary matching, roster limits, the Stepien rule, and AI owners' tolerance for the tax
 function aiLegal(a,b,aP,bP,aK,bK){
@@ -4409,7 +4417,7 @@ function buyerPackages(seller,buyer,target,ctxS,ctxB){
   for(const k of picks)tryIt([],[k]);
   return deals;
 }
-const AI_TRADES_PER_SEASON=6;
+const AI_TRADES_PER_SEASON=18;
 // ---------- trade restrictions ----------
 // a league calendar that only moves forward: free agency, the regular season, then the playoffs, lottery and draft
 const DEC15=Math.round(SEASON_DAYS*.255); // mid-December on the game's calendar
@@ -4431,26 +4439,110 @@ const lockPill=p=>(lockOn(p)?`<span class="pill warn" title="${esc(lockTxt(p))}"
   +(p.contract&&p.contract.ntc?'<span class="pill warn" title="No-trade clause: he only waives it to join a contender, or if he wants out">NTC</span> ':'')
   +(p.contract&&p.contract.kick?`<span class="pill" title="Trade kicker: his salary rises ${Math.round(p.contract.kick*100)}% when he is traded, and the receiving team counts the higher salary">Kicker ${Math.round(p.contract.kick*100)}%</span> `:'');
 const recentlyMoved=p=>lockOn(p)||p.acqTick!=null&&S.tick-p.acqTick<=60; // no flipping a player within about a season's first two-thirds
-// every few days: move a player who asked out, or let a rebuilding team sell a veteran to a contender
+// every few days one deal, for one of several reasons: a player asked out, a rebuilder sells a veteran (to contenders,
+// and at the deadline to teams in the race), a contender buys an upgrade, a team over its budget dumps salary, or two
+// teams swap from a crowded position to a thin one
 function aiTrades(){
   if(!tradeOpen()||(S.aiTrades||0)>=AI_TRADES_PER_SEASON)return;
-  const ready=tid=>tid!==S.userTid&&S.tick-(T(tid).lastTrade??-99)>=30; // a month between deals per team
-  const ais=S.teams.map(t=>t.tid).filter(ready);
-  const cands=S.players.filter(p=>p.tradeReq&&ais.includes(p.tid)&&!recentlyMoved(p)).map(p=>({p,why:'request'}));
-  if(!cands.length&&rnd()<.6)ais.filter(t=>teamMode(t)==='rebuilding').forEach(t=>{
-    const v=roster(t).filter(p=>p.age>=28&&p.ovr>=55&&!p.inj&&!recentlyMoved(p)).sort((a,b)=>b.ovr-a.ovr)[0];
-    if(v)cands.push({p:v,why:'sell'});
-  });
-  if(!cands.length)return;
-  const c=pick(cands),seller=c.p.tid,sl=pickSlots(),ctxS={mode:teamMode(seller),sl};
-  const buyers=shuffle(ais.filter(t=>t!==seller&&(c.why==='request'||teamMode(t)==='contending'))).slice(0,6);
+  const ready=tid=>tid!==S.userTid&&S.tick-(T(tid).lastTrade??-99)>=20; // about three weeks between deals per team
+  const ais=S.teams.map(t=>t.tid).filter(ready);if(ais.length<2)return;
+  const rk=ovrRanks(),sl=pickSlots(),M={};ais.forEach(t=>M[t]=teamMode(t,rk));
+  const X={ais,M,sl,race:aiRace()};
+  const req=S.players.filter(p=>p.tradeReq&&ais.includes(p.tid)&&!recentlyMoved(p));
+  if(req.length&&aiSellTo(X,pick(req),'request'))return;
+  for(const f of shuffle([aiSellVet,aiUpgrade,aiDump,aiSwap]))if(rnd()<.8&&f(X))return;
+}
+// buyers bid for one player; the seller takes the best bid
+function aiSellTo(X,p,why,buyers,ok){
+  const seller=p.tid,ctxS={mode:X.M[seller]||teamMode(seller),sl:X.sl};
+  buyers=buyers||shuffle(X.ais.filter(t=>t!==seller&&(why==='request'||X.M[t]==='contending'))).slice(0,6);
   let best=null;
-  for(const b of buyers)for(const d of buyerPackages(seller,b,c.p,ctxS,{mode:teamMode(b),sl}))if(!best||d.sellerGet>best.sellerGet)best=d; // seller takes the best bid
-  if(best)aiDoTrade(seller,best.buyer,[c.p],best.ps,[],best.ks,c.why);
+  for(const b of buyers)for(const d of buyerPackages(seller,b,p,ctxS,{mode:X.M[b],sl:X.sl,ok:ok||(X.race.has(b)?.9:.97)}))if(!best||d.sellerGet>best.sellerGet)best=d;
+  if(!best)return false;
+  aiDoTrade(seller,best.buyer,[p],best.ps,[],best.ks,why);return true;
+}
+// a favorite (best rating 2+ points clear of the next) sits out the veteran market, and the next four contenders
+// chasing it reach a little further
+function aiRace(){
+  const o=S.teams.map(t=>({tid:t.tid,o:teamOvr(t.tid)})).sort((a,b)=>b.o-a.o),on=o[0].o-o[1].o>=2;
+  const r=new Set(on?o.slice(1,5).map(x=>x.tid).filter(t=>t!==S.userTid):[]);r.fav=on?o[0].tid:null;return r;
+}
+// in the regular season, from about the first month, middle teams at .450 or better are buyers too
+const inRaceAI=tid=>{const t=T(tid),gp=t.w+t.l;return S.phase==='regular'&&gp>=20&&t.w/gp>=.45};
+function aiSellVet(X){
+  const vets=X.ais.filter(t=>X.M[t]==='rebuilding').map(t=>roster(t).filter(p=>p.age>=28&&p.ovr>=55&&!p.inj&&!recentlyMoved(p)).sort((a,b)=>b.ovr-a.ovr)[0]).filter(Boolean);
+  if(!vets.length)return false;
+  const p=pick(vets),buyers=shuffle(X.ais.filter(t=>t!==p.tid&&t!==X.race.fav&&(X.M[t]==='contending'||X.M[t]==='middle'&&inRaceAI(t)))).slice(0,6);
+  return aiSellTo(X,p,'sell',buyers);
+}
+// a contender (first the ones chasing a favorite) shops for a player who would be in its top 4; upgrades are worth
+// a little overpaying for
+function aiUpgrade(X){
+  const cont=X.ais.filter(t=>X.M[t]==='contending'&&t!==X.race.fav);if(!cont.length)return false;
+  const b=shuffle([...X.race]).find(t=>cont.includes(t)&&rnd()<.7)??pick(cont);
+  const fourth=roster(b).map(p=>p.ovr).sort((x,y)=>y-x)[3]||0;
+  const tg=X.ais.filter(t=>t!==b&&X.M[t]!=='contending').flatMap(t=>roster(t).filter(p=>p.ovr>fourth&&p.age<=31&&!p.inj&&!recentlyMoved(p)&&!p.contract.ntc));
+  if(!tg.length)return false;
+  return aiSellTo(X,pick(tg.sort((x,y)=>y.ovr-x.ovr).slice(0,4)),'upgrade',[b],.9);
+}
+// a team over its budget sends a contract (not a top-3 player) and picks to a team with the cap room to take it
+function aiDump(X){
+  const over=X.ais.filter(t=>payroll(t)>Math.max(TAX,aiBudget(t,X.M[t]))+2);if(!over.length)return false;
+  const a=pick(over),third=roster(a).map(p=>p.ovr).sort((x,y)=>y-x)[2]||0;
+  const ps=roster(a).filter(p=>p.contract.amt>=6&&p.ovr<third&&!recentlyMoved(p)&&!p.contract.ntc).sort((x,y)=>tradeValue(x,X.M[a],a)-tradeValue(y,X.M[a],a));
+  const twos=S.picks.filter(k=>k.owner===a&&k.rd===2&&k.season>S.season).sort((x,y)=>x.season-y.season),ones=S.picks.filter(k=>k.owner===a&&k.rd===1&&k.season>S.season).sort((x,y)=>y.season-x.season);
+  const sweet=[[],twos.slice(0,1),twos.slice(0,2),...ones.slice(0,2).map(k=>[k]),...ones.slice(0,1).map(k=>[k,...twos.slice(0,1)])];
+  for(const p of ps.slice(0,3)){
+    const rcv=shuffle(X.ais.filter(t=>t!==a&&payroll(t)+tAmt(p)<=CAP));
+    for(const b of rcv)for(const ks of sweet){
+      if(!aiLegal(a,b,[p],[],ks,[]))continue;
+      if(!sideOk(b,{mode:X.M[b],sl:X.sl},[p],ks,[],[]).ok)continue;
+      aiDoTrade(a,b,[p],[],ks,[],'dump');return true;
+    }
+  }
+  return false;
+}
+// two teams of the same kind trade from a crowded position group to a thin one, at about equal value
+function aiSwap(X){
+  const grp=t=>{const c={g:0,w:0,b:0};roster(t).sort((x,y)=>y.ovr-x.ovr).slice(0,9).forEach(p=>c[posGrp(p)]++);return c};
+  const a=pick(X.ais),ca=grp(a),have=Object.keys(ca).sort((x,y)=>ca[y]-ca[x])[0],need=Object.keys(ca).sort((x,y)=>ca[x]-ca[y])[0];
+  if(ca[have]-ca[need]<2)return false;
+  const kind=t=>X.M[t]==='contending'?'c':'o';
+  for(const b of shuffle(X.ais.filter(t=>t!==a&&kind(t)===kind(a)))){
+    const cb=grp(b);if(cb[need]-cb[have]<1)continue;
+    const young=X.M[a]==='rebuilding'&&X.M[b]==='rebuilding';
+    const ok=(p,g)=>posGrp(p)===g&&!p.inj&&!recentlyMoved(p)&&!p.contract.ntc&&p.ovr>=48&&(!young||p.age<=24);
+    const ctxA={mode:X.M[a],sl:X.sl,ok:.93},ctxB={mode:X.M[b],sl:X.sl,ok:.93}; // the fit is worth a little to both
+    for(const pa of roster(a).filter(p=>ok(p,have)))for(const pb of roster(b).filter(p=>ok(p,need))){
+      const va=tradeValue(pa,ctxB.mode,b),vb=tradeValue(pb,ctxA.mode,a);if(va<=0||vb<=0||Math.abs(va-vb)>.2*Math.max(va,vb))continue;
+      if(!aiLegal(a,b,[pa],[pb],[],[]))continue;
+      if(sideOk(a,ctxA,[pb],[],[pa],[]).ok&&sideOk(b,ctxB,[pa],[],[pb],[]).ok){aiDoTrade(a,b,[pa],[pb],[],[],'swap');return true}
+    }
+  }
+  return false;
+}
+// draft night: the team on the clock sometimes moves down a few spots for a later first plus a future pick
+function aiDraftTrade(){
+  const i=S.draft.idx;if(!S.draft.orig||i<2||i>=28||rnd()>=.12)return;
+  const a=S.draft.order[i],u=S.userTid;if(a===u)return;
+  const k=S.picks.find(x=>x.season===S.season&&x.rd===1&&x.orig===S.draft.orig[i]);if(!k||k.owner!==a)return;
+  const rk=ovrRanks(),sl=pickSlots(),later=[];
+  for(let j=i+1;j<Math.min(30,i+9);j++){const b=S.draft.order[j];if(b===u||b===a||later.some(x=>x.b===b))continue;
+    const kb=S.picks.find(x=>x.season===S.season&&x.rd===1&&x.orig===S.draft.orig[j]);if(kb&&kb.owner===b)later.push({b,kb})}
+  for(const {b,kb} of shuffle(later)){
+    const ctxA={mode:teamMode(a,rk),sl},ctxB={mode:teamMode(b,rk),sl};
+    const fut=S.picks.filter(x=>x.owner===b&&x.season>S.season).sort((x,y)=>x.rd-y.rd||y.season-x.season);
+    for(const add of [fut.filter(x=>x.rd===2).slice(0,1),fut.filter(x=>x.rd===2).slice(0,2),fut.filter(x=>x.rd===1).slice(0,1)]){
+      const bK=[kb,...add];
+      if(!aiLegal(a,b,[],[],[k],bK))continue;
+      if(sideOk(a,ctxA,[],bK,[],[k]).ok&&sideOk(b,{...ctxB,ok:.9},[],[k],[],bK).ok){aiDoTrade(a,b,[],[],[k],bK,'draft');syncDraftOrder();return}
+    }
+  }
 }
 function aiDoTrade(a,b,aP,bP,aK,bK,why){
   const nm=(ps,ks)=>[...ps.map(p=>p.name),...ks.map(k=>pickLabel(k)+' pick')].join(' and ')||'nothing';
-  news(`Trade: the ${tname(a)} sent ${nm(aP,aK)} to the ${tname(b)} for ${nm(bP,bK)}.${why==='request'?` ${aP[0].name} had asked out.`:''}`);
+  const WHY={request:aP[0]?` ${aP[0].name} had asked out.`:'',dump:` The ${T(a).nick} cleared salary.`,upgrade:` The ${T(b).nick} went shopping for a contender's upgrade.`,draft:` The ${T(a).nick} moved down on draft night.`};
+  news(`Trade: the ${tname(a)} sent ${nm(aP,aK)} to the ${tname(b)} for ${nm(bP,bK)}.${WHY[why]||''}`);
   tradeCap(a,b,aP,bP);
   aP.forEach(p=>{p.tid=b;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});bP.forEach(p=>{p.tid=a;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});
   aK.forEach(k=>k.owner=b);bK.forEach(k=>k.owner=a);
