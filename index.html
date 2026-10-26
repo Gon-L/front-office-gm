@@ -1070,6 +1070,15 @@ const MINS=[36,34,33,32,30,22,18,15,12,8];
 // minute targets by rotation depth; the 10-man plan is the long-standing default
 const PRESETS={8:[38,36,35,34,32,26,21,18],9:[37,35,34,33,31,24,19,15,12],10:MINS};
 const rotOf=tid=>T(tid).rot||{};
+// how an AI team uses its rotation: rebuilders play their kids in the regular season, contenders rest older starters.
+// Team directions are worked out once a day
+let AIRM={k:null,m:{}};
+function aiRotMode(tid){
+  const k=S.season*1000+S.day+(S.phase==='playoffs'?500:0);
+  if(AIRM.k!==k){const rk=ovrRanks();AIRM={k,m:Object.fromEntries(S.teams.map(t=>[t.tid,teamMode(t.tid,rk)]))}}
+  const m=AIRM.m[tid];
+  return S.phase==='regular'&&m==='rebuilding'?'youth':m==='contending'?'aicont':null;
+}
 const isBig=p=>p.pos==='C';
 const isGuard=p=>/G/.test(p.pos);
 // strategy presets for your team; each shapes depth, minutes, caps and back-to-back rest in rotationFor
@@ -1077,14 +1086,14 @@ const ROT_MODES={win:'Win now',youth:'Develop youth',load:'Load management'};
 // who dresses tonight, in rotation order, and how many seconds each should play
 // your team also has named backups for starters, minute caps, a playoff depth, rest-next-game and a strategy
 function rotationFor(tid,b2b,exact){
-  const rot=rotOf(tid),you=tid===S.userTid,mode=you?rot.mode:null;
+  const rot=rotOf(tid),you=tid===S.userTid,mode=you?rot.mode:aiRotMode(tid);
   const order=you&&rot.order||[],full=roster(tid).slice().sort((a,b)=>{const i=order.indexOf(a.pid),j=order.indexOf(b.pid);return (i<0?99:i)-(j<0?99:j)||b.ovr-a.ovr});
   let pool=full.filter(p=>!p.inj&&!p.gl);if(pool.length<8)pool=full.filter(p=>!p.inj); // G League players come back if bodies run short
   if(pool.length<5)pool=full.slice();
   // second night of a back-to-back: your rest setting, or AI teams sitting older starters now and then
   const rested=[];
   if(b2b)pool.slice(0,5).forEach((p,i)=>{
-    const rest=you?(rot.rest==='stars'&&i<2)||(rot.rest==='vets'&&p.age>=32)||(!rot.rest&&mode==='load'&&p.age>=30):p.age>=33&&rnd()<.35;
+    const rest=you?(rot.rest==='stars'&&i<2)||(rot.rest==='vets'&&p.age>=32)||(!rot.rest&&mode==='load'&&p.age>=30):mode==='aicont'?p.age>=31&&rnd()<.45:p.age>=33&&rnd()<.35;
     if(rest&&pool.length-rested.length>9)rested.push(p)});
   // players you chose to rest for the next game only
   if(you&&!exact&&rot.restNext)rot.restNext.forEach(id=>{const p=pool.find(x=>x.pid===id);if(p&&!rested.includes(p)&&pool.length-rested.length>9)rested.push(p)});
@@ -1097,7 +1106,7 @@ function rotationFor(tid,b2b,exact){
     const rest=pool.filter(p=>!five.includes(p));
     pool=[...five.map(x=>x||rest.shift()).filter(Boolean),...rest];
   }
-  const season=you&&rot.depth||(mode==='win'?8:10),depth=!you?10:S.phase==='playoffs'&&rot.po!=='same'?(rot.po===9?9:8):season;
+  const season=you&&rot.depth||(mode==='win'?8:10),depth=!you?(S.phase==='playoffs'?8:10):S.phase==='playoffs'&&rot.po!=='same'?(rot.po===9?9:8):season;
   const slots=PRESETS[depth],ov=you&&rot.mins||{},caps=you&&rot.cap||{};
   const list=pool.map((p,i)=>{let base=slots[i]||0;
     if(mode==='youth'&&i>=5){if(p.age<=24)base=base?base+6:i<12?10:0;else if(p.age>=30)base=Math.max(0,base-4)}
@@ -3168,6 +3177,7 @@ function finishPlayoffs(champ){
   S.players.forEach(p=>{if(p.inj&&(p.inj.g-=50)<=0)p.inj=null});
   // development and retirement
   const retired=[];
+  leagueLevel();aiDevFocus();
   S.players.forEach(p=>{if(p.tid!==-2)develop(p)});
   devReport();
   devNews();
@@ -3246,6 +3256,24 @@ function playDev(p){
   if(p.tid!==S.userTid&&p.age<=22)return .2; // AI teams quietly send deep-bench kids to the G League
   return 0;
 }
+// the league's talent level: the average of every team's ten best ratings
+const talentLevel=()=>S.teams.reduce((s,t)=>s+roster(t.tid).map(p=>p.ovr).sort((a,b)=>b-a).slice(0,10).reduce((x,y)=>x+y,0)/10,0)/S.teams.length;
+// young players outgrow the veterans they replace, so without a check ratings climb every year. Each summer the drift
+// from the league's starting level (S.ovrRef) feeds a correction to everyone's growth: part of it this year's drift,
+// part the drift added up over the years (S.devI)
+function leagueLevel(){
+  const lv=talentLevel();if(S.ovrRef==null)S.ovrRef=r1(lv);
+  const d=lv-S.ovrRef;
+  S.devI=clamp((S.devI??-.4)-.08*d,-2,1); // starts a little below zero: the climb is steady, not a one-off
+  S.devAdj=Math.round(clamp(S.devI-.3*d,-2.5,1)*100)/100;
+}
+// AI teams aim their development staff at their young players' weakest skill
+function aiDevFocus(){
+  for(const t of S.teams){if(t.tid===S.userTid)continue;
+    const yg=roster(t.tid).filter(p=>p.age<=25);if(!yg.length){t.devFocus=null;continue}
+    t.devFocus=RK.map(k=>[k,yg.reduce((s,p)=>s+p.r[k],0)/yg.length]).sort((a,b)=>a[1]-b[1])[0][0];
+  }
+}
 function develop(p){
   devTraits(p);
   const a=p.age,rel=a-p.peak,why=[],W=(l,v)=>{if(Math.abs(v)>=.05)why.push([l,Math.round(v*10)/10])};
@@ -3257,6 +3285,8 @@ function develop(p){
   if(tr.dev==='vets'&&a>=30){base+=.6;W('Veteran care staff',.6)}
   if(tr.hc==='teach'&&a<=24){base+=.4;W('Head coach (teacher)',.4)}
   if(a<=27){const v=weMult(p);base+=v;W('Work ethic',v)}
+  // see leagueLevel: only players still growing, and high-potential players feel it less, so new stars still emerge
+  if(S.devAdj&&rel<0){const v=S.devAdj*clamp((75-p.pot)/25,.5,1);base+=v;W('League talent level',v)}
   // a veteran leader on the roster speeds up players 23 and under; without one they grow a bit slower
   p.ment=null;
   if(a<=23&&p.tid>=0){const m=mentorOf(p);let v=-.15;if(m){v+=posGrp(m)===posGrp(p)?.55:.35;p.ment=m.pid}base+=v;W(m?`Mentor ${m.name}`:'No mentor',v)}
