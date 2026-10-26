@@ -596,7 +596,7 @@ const optYear=c=>c.ty&&c.ty[0]===S.season+1?c.ty[0]:c.exp;
 const qoOf=p=>r1(Math.max((p.contract?p.contract.amt:p.lastSal||0)*1.3,minFor(p)));
 function aiMatches(o,p,amt){
   const ovrs=roster(o).map(x=>x.ovr).sort((a,b)=>b-a),top8=ovrs[7]||45;
-  return (p.ovr>=top8||p.age<=24&&p.pot>=58)&&payroll(o)+amt<=TAX+15&&!(hardOf(o)&&payroll(o)+amt>hardOf(o));
+  return (p.ovr>=top8||p.age<=24&&p.pot>=58)&&aiKeep(o,p,amt,p.askYrs||3,0,payroll(o))&&!(hardOf(o)&&payroll(o)+amt>hardOf(o));
 }
 // the original team keeps him at the offer sheet's terms, with his Bird rights
 function matchSign(o,p,amt,yrs){p.rights=o;sign(o,p,amt,yrs,true)}
@@ -3577,12 +3577,71 @@ function aiExtensions(chance){
       const wanted=p.ovr>=keepLine||(p.age<=24&&p.pot>=58);
       if(!wanted||p.age>=34)continue;
       const o=extOffer(p);
-      if(!o.ok||nextYearPayroll(t.tid)+o.amt>TAX+15)continue;
+      if(!o.ok||!aiKeep(t.tid,p,o.amt,o.yrs,S.phase==='regular'?1:0,nextYearPayroll(t.tid)))continue;
       p.next=mkC(o.amt,o.yrs,p.contract.exp+1,true,p);
       if(p.ovr>=58)news(`${tname(t.tid)} extended ${p.name}: ${o.yrs} years, ${money(o.amt)} per year.`);
     }
   }
 }
+// ---------- AI front offices (v81) ----------
+// the payroll an AI team is willing to carry: contenders pay into the tax, rebuilders stay well under it.
+// Big markets and win-now owners spend more, bottom-line owners less; a team near the repeater tax pulls back
+const AI_BASE={contending:6,middle:-8,rebuilding:-28};
+function aiBudget(tid,mode=teamMode(tid)){
+  const t=T(tid),o=t.own||{},tr=o.tr||[],mk=t.biz?t.biz.market:3;
+  let b=TAX+AI_BASE[mode]+(mk-3)*4+({win:6,profit:-6}[o.type]||0)+(tr.includes('spender')?5:0)-(tr.includes('pinch')?5:0);
+  if(t.biz&&t.biz.taxYears.filter(y=>y>=S.season-3).length>=2)b-=6;
+  return r1(clamp(b,CAP+5,APRON2+2));
+}
+// his rating y seasons from now: young players grow toward their potential, veterans fade after their peak (as in develop)
+function projOvr(p,y){
+  let o=p.ovr,a=p.age;const pk=p.peak??27;
+  for(let i=0;i<y;i++){const rel=a-pk;o+=rel<=-3?Math.max(0,(p.pot-o)*.3):rel<=0?Math.max(0,(p.pot-o)*.15):rel<=3?-1:rel<=6?-2.6:-3.8;a++}
+  return o;
+}
+// what a deal of yrs seasons, starting from seasons from now, is worth to this team per year
+function aiWorth(tid,p,yrs,from=0,mode=teamMode(tid),third=aiThird(tid,p)){
+  let s=0;
+  for(let y=from;y<from+yrs;y++){const o=Math.round(projOvr(p,y));s+=marketValue({...p,ovr:o,pot:Math.max(o,p.pot),age:p.age+y},true)}
+  let w=s/Math.max(1,yrs);
+  if(mode==='rebuilding'&&p.age>=29)w*=.7;
+  else if(mode!=='rebuilding'&&p.ovr>=third)w*=1.15; // a top-3 player
+  return r1(w);
+}
+// the third-best rating on the roster without him: at or above it he is a top-3 player,
+// and a contender or middle team stretches its budget to keep him
+const aiThird=(tid,p)=>roster(tid).filter(x=>x!==p).map(x=>x.ovr).sort((a,b)=>b-a)[2]||0;
+const aiStar=(tid,p)=>p.ovr>=aiThird(tid,p);
+const aiRoomFor=(tid,p,mode)=>aiBudget(tid,mode)+(mode!=='rebuilding'&&aiStar(tid,p)?12:0);
+// does this AI team keep him at this price? He has to be a rotation player or a young prospect, and worth it
+function aiKeep(tid,p,amt,yrs,from,pay){
+  const mode=teamMode(tid),ovrs=roster(tid).map(x=>x.ovr).sort((a,b)=>b-a),top8=ovrs[7]||45;
+  if(!(p.ovr>=top8||p.age<=24&&p.pot>=58))return false;
+  if(amt>minFor(p)+.001&&pay+amt>aiRoomFor(tid,p,mode))return false;
+  return amt<=aiWorth(tid,p,yrs,from,mode)*(aiStar(tid,p)?1.25:1.1)+.001;
+}
+// how many years an AI team offers a free agent: veterans get short deals, rebuilders give 29+ players one year
+function aiFaYrs(tid,p,mode){
+  let y=p.askYrs;
+  if(p.age>=32||mode==='rebuilding'&&p.age>=29)y=1;else if(p.age>=30)y=Math.min(y,2);
+  return Math.max(1,y);
+}
+// how much an AI team wants a free agent: rating, upside for teams that can wait, age for rebuilders, price against
+// worth, and position need. null if it wouldn't sign him at his price
+function aiFaScore(tid,p,mode,ro,bud,third){
+  const yrs=aiFaYrs(tid,p,mode),min=p.ask<=minFor(p)+.001;
+  if(!min&&payroll(tid)+p.ask>bud)return null;
+  const w=aiWorth(tid,p,yrs,0,mode,third);
+  if(!min&&p.ask>w*1.3)return null;
+  let s=p.ovr+(p.age<=24?(p.pot-p.ovr)*(mode==='rebuilding'?.5:mode==='middle'?.25:.1):0);
+  if(mode==='rebuilding'&&p.age>=29)s-=(p.age-28)*1.5;
+  if(mode==='contending'&&p.age>=33)s-=(p.age-32);
+  s+=clamp((w-p.ask)/3,-6,4);
+  const n=ro.filter(x=>x.pos===p.pos).length;s+=n<=1?1.5:n>=4?-1.5:0;
+  return s;
+}
+// what an AI team can pay a free agent right now: cap space or an exception, within its budget
+const aiRoom=(tid,mode)=>r1(Math.max(MINSAL,Math.min(roomOf(tid),aiBudget(tid,mode)-payroll(tid))));
 function nextYearPayroll(tid){return r1(roster(tid).filter(p=>p.contract.exp>S.season||p.resign==='yes'||p.next).reduce((s,p)=>s+(p.contract.exp>S.season?salAt(p.contract,S.season+1):p.next?salAt(p.next,S.season+1):firstYr(p.ask,p.askYrs,raiseOf(p.ask,true))),0)+T(tid).dead.filter(d=>deadOn(d,S.season+1)).reduce((s,d)=>s+d.amt,0))}
 
 // ---------- free agency ----------
@@ -3592,13 +3651,12 @@ function toFreeAgency(){
   S.players.filter(p=>p.next&&p.contract&&p.contract.exp<=S.season).forEach(p=>{p.contract=p.next;delete p.next});
   teamOpts(S.userTid).forEach(p=>{const c=p.contract;if(c.ty&&c.ty[0]===S.season+1)c.ty.shift();else delete c.opt});
   expiring(S.userTid).forEach(p=>{if(p.resign==null&&UI.renounce&&UI.renounce.has(p.pid))p.resign='no'}); // renounced in the cap planner
+  // AI teams go through their own free agents best first: they keep the ones worth the price that fit the budget
+  for(const t of S.teams){if(t.tid===S.userTid)continue;
+    for(const p of expiring(t.tid).sort((a,b)=>b.ovr-a.ovr)){if(p.refuse)continue;const pay=nextYearPayroll(t.tid);
+      p.resign=rnd()<.92&&aiKeep(t.tid,p,p.ask,p.askYrs,0,pay)&&(p.ask<=birdOf(p).lim+.001||pay+p.ask<=CAP)?'yes':'no'}} // over his Bird limit it takes cap space
   S.players.filter(p=>p.tid>=0&&p.contract.exp<=S.season).forEach(p=>{
-    let keep;
-    if(p.refuse)keep=false;
-    else if(p.tid===S.userTid)keep=p.resign==='yes';
-    else{const ovrs=roster(p.tid).map(x=>x.ovr).sort((a,b)=>b-a),top8=ovrs[7]||45; // AI teams usually keep their rotation, if the money works
-      keep=(p.ovr>=top8?rnd()<.8:p.age<=24&&p.pot>=58?rnd()<.55:false)&&nextYearPayroll(p.tid)+p.ask<TAX+(p.ovr>=ovrs[2]?30:10) // and pay into the tax for a top-3 player
-        &&(p.ask<=birdOf(p).lim+.001||nextYearPayroll(p.tid)+p.ask<=CAP)} // over his Bird limit it takes cap space
+    const keep=!p.refuse&&p.resign==='yes';
     if(keep){if(p.ask>p.contract.amt*1.2&&p.ask>minFor(p)+.001)p.tlock=(S.season+1)*1000+100+DEC15;p.contract=mkC(p.ask,p.askYrs,S.season+1,true,p);if(p.askOpt!=null){setOpt(p.contract,p.askOpt);delete p.askOpt}addClauses(p,true)}
     else{const mine=p.tid===S.userTid,hold=mine&&!p.refuse&&p.resign!=='no',rk=p.contract.rk,o=p.tid;
       // a rookie-scale player gets a qualifying offer: yours unless you let him go, an AI team's if he is worth keeping
@@ -3706,18 +3764,20 @@ function faDay0(){
 function aiFaRound(){
   settleAsks();
   const off=S.phase==='freeagency',cap=off?17:15;
-  const ais=shuffle(S.teams.filter(t=>t.tid!==S.userTid).map(t=>t.tid));
+  const ais=shuffle(S.teams.filter(t=>t.tid!==S.userTid).map(t=>t.tid)),rk=ovrRanks();
   for(const tid of ais){
     const ro=roster(tid),full=ro.length>=cap,cut=full&&cuttable(tid);if(full&&!cut)continue;
-    const ovrs=ro.map(p=>p.ovr).sort((a,b)=>b-a),worst=ovrs[ovrs.length-1]||0,rot=ovrs[7]||0;
+    const ovrs=ro.map(p=>p.ovr).sort((a,b)=>b-a),worst=ovrs[ovrs.length-1]||0,rot=ovrs[7]||0,mode=teamMode(tid,rk);
     // a full roster still adds a player who would crack the top 8; the extra bodies get cut before opening night,
     // and a team at the limit waives a minimum-salary player to make room for one
     const want=p=>ro.length<13||(ro.length<15?p.ovr>worst+3:p.ovr>rot);
-    const fa=freeAgents().filter(p=>!p.inj&&want(p)),c=fa.filter(p=>canSign(tid,p,full).ok).sort((a,b)=>b.ovr-a.ovr)[0];
+    // the best fit for the money, by the team's direction (see aiFaScore)
+    const fa=freeAgents().filter(p=>!p.inj&&want(p)),bud=aiBudget(tid,mode),third=ovrs[2]||0;
+    const c=fa.filter(p=>canSign(tid,p,full).ok).map(p=>({p,s:aiFaScore(tid,p,mode,ro,bud,third)})).filter(x=>x.s!=null).sort((a,b)=>b.s-a.s).map(x=>x.p)[0];
     // early in the summer a team holds its money for a clearly better player whose price is coming into range
-    if(c&&off&&S.faDay<12){const room=roomOf(tid);if(fa.some(p=>p.ovr>=c.ovr+4&&p.ask<=room*1.4&&p.ask>room))continue}
+    if(c&&off&&S.faDay<12){const room=aiRoom(tid,mode);if(fa.some(p=>p.ovr>=c.ovr+4&&p.ask<=room*1.4&&p.ask>room))continue}
     if(c&&c.rfa&&c.rfa.tid!==tid){if(rnd()<(off?.85:.5)&&!(S.sheets||[]).some(x=>x.pid===c.pid))offerSheet(tid,c);continue}
-    if(c&&rnd()<(off?.85:.5)){if(full)aiWaive(cut);const big=c.ask>=10||c.ovr>=60;sign(tid,c,c.ask,c.askYrs);if(big)news(`${c.name} signed with ${tname(tid)}: ${c.askYrs} yr${c.askYrs>1?'s':''}, ${money(c.contract.amt)} per year.`)}
+    if(c&&rnd()<(off?.85:.5)){if(full)aiWaive(cut);const big=c.ask>=10||c.ovr>=60;sign(tid,c,c.ask,aiFaYrs(tid,c,mode));if(big)news(`${c.name} signed with ${tname(tid)}: ${c.askYrs} yr${c.askYrs>1?'s':''}, ${money(c.contract.amt)} per year.`)}
   }
 }
 // asking prices settle toward what the market can actually pay
@@ -3735,7 +3795,8 @@ function settleAsks(){
 // each AI team's spending room, whether it has an open spot, and the rating a player needs to crack its top 8
 function aiRooms(){
   const max=S.phase==='freeagency'?17:15;
-  return S.teams.filter(t=>t.tid!==S.userTid).map(t=>{const ro=roster(t.tid);return {room:roomOf(t.tid),open:ro.length<max,rot:ro.map(p=>p.ovr).sort((a,b)=>b-a)[7]||0,cut:ro.length>=max&&!!cuttable(t.tid)}});
+  const rk=ovrRanks();
+  return S.teams.filter(t=>t.tid!==S.userTid).map(t=>{const ro=roster(t.tid);return {room:aiRoom(t.tid,teamMode(t.tid,rk)),open:ro.length<max,rot:ro.map(p=>p.ovr).sort((a,b)=>b-a)[7]||0,cut:ro.length>=max&&!!cuttable(t.tid)}});
 }
 // the most any AI team could pay right now (cap space, else the mid-level, else the minimum), counting full teams
 // that would waive a minimum-salary player for someone who cracks their top 8
@@ -3862,8 +3923,8 @@ function startSeason(){
 }
 
 // ---------- trades ----------
-function teamMode(tid){
-  const t=T(tid),gp=t.w+t.l,rank=ovrRanks()[tid];
+function teamMode(tid,rk){
+  const t=T(tid),gp=t.w+t.l,rank=(rk||ovrRanks())[tid];
   if(gp>=15){const w=t.w/gp;return (w>=.56||(rank<=10&&w>=.45))?'contending':w<.4?'rebuilding':'middle'}
   return rank<=10?'contending':rank>=20?'rebuilding':'middle';
 }
@@ -4328,7 +4389,7 @@ function aiLegal(a,b,aP,bP,aK,bK){
     if(outP.some(lockOn)||outP.length>1&&outP.some(aggOn))return false;
     if(after>APRON2&&outK.some(k=>k.rd===1&&k.orig===tid&&k.season===farYear()))return false;
     const n=roster(tid).length-outP.length+inP.length;if(n<lim[0]||n>lim[1])return false;
-    if(after>TAX+25&&inn>out)return false;
+    if(after>TAX+8&&inn>out&&after>Math.max(TAX,aiBudget(tid))+8)return false; // the budget only matters above the tax
     if(stepienIssue(tid,S.picks.filter(k=>k.owner===tid&&!outK.includes(k)).concat(inK)))return false;
     if(outK.some(k=>owedNext(tid,k)))return false;
   }
