@@ -347,6 +347,10 @@ body.has-tbar .main{padding-bottom:6.5rem}
 .biz-ev{border-left-color:var(--s3)}
 .biz-hint{padding:.65rem .85rem;border-radius:8px;margin:.75rem 0;font-size:.92rem}
 @media (max-width:560px){.costs div{grid-template-columns:1fr 4.5rem}.costs .meter{grid-column:1 / -1;grid-row:2}}
+.dl-list{margin:.4rem 0 .8rem;padding-left:1.1rem;display:grid;gap:.4rem}
+.dl-new{animation:dlIn .5s ease both}
+@keyframes dlIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.dl-new{animation:none}}
 </style>
 
 <div id="app"></div>
@@ -1466,6 +1470,84 @@ function injure(p){
   else if(p.ovr>=60&&g>=10)news(`${T(p.tid).abbr}'s ${p.name} is out ${g} games with ${withInj(x[0])}.`);
 }
 
+// ---------- franchise legends ----------
+// S.fc[tid][pid]: a player's regular-season totals with a franchise since this league began (titles and big awards too)
+const FC_HON={'MVP':3,'Finals MVP':1.5,'Defensive Player of the Year':1,'All-NBA First Team':1,'All-NBA Second Team':.7,'All-NBA Third Team':.5};
+const LEG_LINE=10,LEG_RETURN=4; // jersey retired / standing ovation on a return
+function fcBook(tid){S.fc=S.fc||{};return S.fc[tid]=S.fc[tid]||{}}
+function fcSeason(p,tid,g,pts,reb,ast,s,aw,title){
+  const b=fcBook(tid),e=b[p.pid]=b[p.pid]||{n:p.name,gp:0,pts:0,reb:0,ast:0,ns:0,s0:s,s1:s,t:0,h:{}};
+  e.n=p.name;e.gp+=g;e.pts+=pts;e.reb+=reb;e.ast+=ast;e.ns++;e.s0=Math.min(e.s0,s);e.s1=Math.max(e.s1,s);if(title)e.t++;
+  (aw||[]).forEach(a=>{if(FC_HON[a.type]!=null)e.h[a.type]=(e.h[a.type]||0)+1});
+}
+// saves from before v87 rebuild the book from the season lines of players still in the league
+function fcInit(){
+  if(S.fcv)return;S.fcv=1;S.fc=S.fc||{};const ab=Object.fromEntries(S.teams.map(t=>[t.abbr,t.tid]));
+  for(const p of S.players)for(const h of p.hist||[]){const tid=ab[h.t];if(tid==null||!h.gp)continue;
+    fcSeason(p,tid,h.gp,Math.round(h.ppg*h.gp),Math.round(h.rpg*h.gp),Math.round(h.apg*h.gp),h.s,(p.awards||[]).filter(a=>a.s===h.s),false)}
+}
+const fcScore=e=>e.pts/1500+e.reb/2500+e.ast/1800+e.gp/250+e.t*1.5+Object.entries(e.h||{}).reduce((s,[k,v])=>s+(FC_HON[k]||0)*v,0);
+// the book plus this season so far for the current roster
+function fcLive(tid){
+  fcInit();const out={},inSeason=S.phase==='regular'||(S.phase==='playoffs'&&!(S.po&&S.po.off));
+  for(const [pid,e] of Object.entries(fcBook(tid)))out[pid]={...e,pid:+pid};
+  if(inSeason)for(const p of roster(tid))if(p.st.gp>0){const e=out[p.pid]||(out[p.pid]={n:p.name,gp:0,pts:0,reb:0,ast:0,ns:0,s0:S.season,s1:S.season,t:0,h:{},pid:p.pid});
+    e.gp+=p.st.gp;e.pts+=p.st.pts;e.reb+=p.st.reb;e.ast+=p.st.ast;e.s1=S.season;e.ns+=e.s1>(fcBook(tid)[p.pid]||{s1:0}).s1?1:0}
+  for(const p of roster(tid))if(out[p.pid])out[p.pid].cur=1;
+  return Object.values(out);
+}
+const fcSince=()=>S.rec&&S.rec.since||2027;
+const MS=[['pts','points',[2500,5000,7500,10000,12500,15000,20000,25000]],['reb','rebounds',[1000,2500,5000,7500,10000]],['ast','assists',[1000,2500,5000,7500]],['gp','games',[250,500,750,1000]]];
+const fmtN=n=>n.toLocaleString('en-US');
+// your players' milestones with the team, checked after each day
+function milestoneDay(){
+  const u=S.userTid,live=fcLive(u),m=S.msMem=S.msMem||{},nick=T(u).nick,lead=live.slice().sort((a,b)=>b.pts-a.pts);
+  const lvl=e=>Object.fromEntries(MS.map(([k,,L])=>[k,L.filter(v=>e[k]>=v).pop()||0]));
+  for(const e of live.filter(e=>e.cur)){
+    const key=u+':'+e.pid,now=lvl(e),rk=lead.indexOf(e)+1,old=m[key];m[key]={...now,rk};
+    if(!old)continue; // first look: what he already has doesn't make news
+    for(const [k,label] of MS)if(now[k]>old[k]){
+      news(k==='gp'?`${e.n} played his ${fmtN(now[k])}th game for the ${nick}.`:`${e.n} passed ${fmtN(now[k])} ${label} with the ${nick}${k==='pts'&&rk<=10?`, No. ${rk} in team history since ${fcSince()}`:''}.`,1);hypeBump(u,.5)}
+    if(e.pts>=2500&&old.rk&&rk<old.rk&&rk<=5&&lead[rk])news(`${e.n} passed ${lead[rk].n} for No. ${rk} on the ${nick}' scoring list since ${fcSince()}.`,1);
+  }
+}
+// a franchise great retires: his jersey goes up at a home game next season
+function legendRetire(p){
+  fcInit();
+  for(const [tid,b] of Object.entries(S.fc)){const e=b[p.pid];if(!e)continue;const sc=fcScore(e);if(sc<LEG_LINE)continue;
+    const R=(S.roh=S.roh||{})[tid]=S.roh[tid]||[];if(R.some(r=>r.pid===p.pid))continue;
+    R.push({pid:p.pid,n:e.n,s0:e.s0,s1:e.s1,gp:e.gp,pts:e.pts,reb:e.reb,ast:e.ast,t:e.t,h:{...e.h},sc:r1(sc),s:S.season+1,day:null,done:false});
+    if(+tid===S.userTid)news(`The ${T(+tid).nick} will retire ${e.n}'s jersey next season.`,1);
+    else if(sc>=LEG_LINE+5)news(`The ${tname(+tid)} will retire ${e.n}'s jersey next season.`);
+  }
+}
+// jersey nights and returns, after each day of your season
+function legendDay(){
+  const u=S.userTid;if(u==null||S.phase!=='regular')return;
+  fcInit();milestoneDay();
+  const R=S.roh&&S.roh[u]||[],last=S.day-1,g=S.sched[last]&&S.sched[last].find(g=>g.h===u&&g.hs!=null);
+  for(const r of R.filter(r=>r.s===S.season&&!r.done)){
+    if(r.day==null){for(let d=S.day+2;d<S.sched.length;d++)if(S.sched[d].some(g=>g.h===u)){r.day=d;break}if(r.day==null)r.done=true}
+    else if(g&&last>=r.day){r.done=true;hypeBump(u,3);
+      news(`Jersey night: before the game against the ${T(g.a).nick}, the ${T(u).nick} retired ${r.n}'s jersey. ${r.s0===r.s1?r.s0:`${r.s0}-${r.s1}`}: ${fmtN(r.gp)} games, ${fmtN(r.pts)} points${r.t?`, ${r.t} title${r.t>1?'s':''}`:''}. The crowd stood for five minutes.`,1)}
+  }
+  if(g){const opp=g.a,mem=S.retMem=S.retMem&&S.retMem.s===S.season?S.retMem:{s:S.season,p:[]},b=fcBook(u);
+    for(const p of roster(opp)){const e=b[p.pid];if(!e||mem.p.includes(p.pid)||fcScore(e)<LEG_RETURN||p.inj)continue;
+      mem.p.push(p.pid);hypeBump(u,.5);news(`${p.name} came back to ${T(u).city} with the ${T(opp).nick} and got a standing ovation from the crowd that watched him play ${fmtN(e.gp)} games here.`,1);break}}
+}
+const honTxt=e=>[e.t?`${e.t} title${e.t>1?'s':''}`:'',...Object.entries(e.h||{}).map(([k,v])=>`${v>1?v+'× ':''}${k}`)].filter(Boolean).join(', ');
+function renderLegends(){
+  fcInit();const u=S.userTid,nick=T(u).nick,live=fcLive(u),R=(S.roh&&S.roh[u]||[]).slice().sort((a,b)=>b.sc-a.sc);
+  const nm=e=>`${pById(e.pid)?plink(e.pid,e.n):esc(e.n)}${e.cur?' <span class="pill">active</span>':''}`;
+  const top=(k,l)=>{const r=live.filter(e=>e[k]>0).sort((a,b)=>b[k]-a[k]).slice(0,5);
+    return `<div><h3>${l}</h3>${r.length?`<div class="scroll"><table><tbody>${r.map((e,i)=>`<tr><td class="l num">${i+1}</td><td class="l">${nm(e)}</td><td class="num">${fmtN(e[k])}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nothing yet.</p>'}</div>`};
+  const roh=R.length?`<div class="scroll"><table><thead><tr><th class="l">Player</th><th class="l">Years</th><th>G</th><th>PPG</th><th>RPG</th><th>APG</th><th class="l">Honors</th><th class="l">Jersey night</th></tr></thead><tbody>${R.map(r=>`<tr><td class="l"><b>${esc(r.n)}</b></td><td class="l">${r.s0===r.s1?r.s0:`${r.s0}-${r.s1}`}</td><td class="num">${r.gp}</td><td class="num">${r1(r.pts/r.gp)}</td><td class="num">${r1(r.reb/r.gp)}</td><td class="num">${r1(r.ast/r.gp)}</td><td class="l" style="white-space:normal">${honTxt(r)||'–'}</td><td class="l">${r.done?r.s:r.s>S.season?`Next season`:`This season${r.day!=null?`, day ${r.day+1}`:''}`}</td></tr>`).join('')}</tbody></table></div>`
+    :`<p class="muted">No retired jerseys yet. When a player with a great career here retires, the ${nick} retire his jersey at a home game the next season.</p>`;
+  return `<div class="panel"><h2>${nick} legends</h2><h3>Ring of Honor</h3>${roh}
+   <div class="grid2" style="margin-top:.75rem">${top('pts','Points')}${top('reb','Rebounds')}${top('ast','Assists')}${top('gp','Games')}</div>
+   <p class="muted" style="font-size:.85rem">All-time leaders count regular-season games with the ${nick} since ${fcSince()}, including this season. Milestones with the team make the news. A jersey goes up for a long, decorated career here: points, rebounds, assists and games, plus titles and MVP, Finals MVP, Defensive Player and All-NBA honors won here.</p></div>`;
+}
+
 // ---------- records book ----------
 // marks set in this league since it began, league-wide and per franchise. News only when a record from an earlier season falls,
 // so the first season fills the book quietly.
@@ -1552,13 +1634,16 @@ function simDays0(n){
     tenDays();
     accrueDay();
     if(S.day%7===6)S.teams.forEach(t=>{if(t.tid!==S.userTid)t.biz.price=goodPrice(t)}); // AI teams reprice weekly
+    if(S.day===deadlineDay()-1&&!dlClosed())deadlineHour();
     S.day++;
+    if(S.day===deadlineDay())deadlineRecap();
     if(S.day%16===8&&S.day<S.sched.length-3)fireBizEvent(); // a business decision every couple of weeks
     if(S.day%20===12&&S.day<S.sched.length-3&&rnd()<.75)fireStory(); // a locker room story every few weeks
     ownSeasonDay();
     raceDay();
     awardDay();
     prDay();
+    legendDay();
     if(cupOn()&&S.day<S.sched.length)cupSetup(S.day);
     if(S.day===tvFlexDay()&&S.userTid!=null){
       const before=tvCount(S.userTid)[1];pickTV(S.day+7);const after=tvCount(S.userTid)[1];
@@ -3224,7 +3309,9 @@ function finishPlayoffs(champ){
   S.books=(S.books||0)+1;
   S.teams.forEach(t=>{const tot=finTotal(t.biz.fin);t.biz.finHist.unshift({s:S.season,...tot,fin:t.biz.fin});t.biz.finHist.length=Math.min(t.biz.finHist.length,10);t.biz.fin=newFin()});
   S.players.forEach(p=>{if(p.tid>=0)p.byrs=birdYrs(p)+1});
+  fcInit();
   S.players.forEach(p=>{if(p.st.gp>0&&p.tid>=0){const g=p.st.gp,a=adv(p);p.hist.unshift({s:S.season,t:T(p.tid).abbr,gp:g,mpg:r1(a.mpg),ppg:r1(p.st.pts/g),rpg:r1(p.st.reb/g),apg:r1(p.st.ast/g),spg:r1(a.spg),bpg:r1(a.bpg),ts:Math.round(a.ts*1000)/10,gmsc:r1(a.gmsc),ovr:p.ovr})}});
+  S.players.forEach(p=>{if(p.st.gp>0&&p.tid>=0)fcSeason(p,p.tid,p.st.gp,p.st.pts,p.st.reb,p.st.ast,S.season,(p.awards||[]).filter(a=>a.s===S.season),S.po&&S.po.champ===p.tid)});
   // the summer heals about 50 games' worth; long injuries carry into next season
   S.players.forEach(p=>{if(p.inj&&(p.inj.g-=50)<=0)p.inj=null});
   // development and retirement
@@ -3240,7 +3327,7 @@ function finishPlayoffs(champ){
     if(p.tid===-1&&p.age>=30)pr+=.25;
     // a season with no team: most head overseas or retire; young prospects get one more year to catch on
     if(p.tid===-1){p.idle=(p.idle||0)+1;if(p.idle>=2||p.age>=26||p.ovr<45)pr=Math.max(pr,p.ovr>=58?.6:.9)}
-    if(rnd()<pr){if(p.tid>=0)retired.push(p);considerHof(p);return false}
+    if(rnd()<pr){if(p.tid>=0)retired.push(p);considerHof(p);legendRetire(p);return false}
     return true;
   });
   retired.filter(p=>p.tid===S.userTid||p.ovr>=58).slice(0,5).forEach(p=>{
@@ -4269,7 +4356,7 @@ function stepienIssue(tid,owned){
     if(!has(y)&&!has(y+1)&&(had(y)||had(y+1)))return `${tid===S.userTid?'You':T(tid).abbr} would have no first-round pick in ${y} or ${y+1}. Teams can't trade away firsts in back-to-back future drafts (the Stepien rule).`;}
   return null;
 }
-function tradeOpen(){return (S.phase==='regular'&&S.day<deadlineDay())||['combine','draft','freeagency'].includes(S.phase)}
+function tradeOpen(){return (S.phase==='regular'&&S.day<deadlineDay()&&!dlClosed())||['combine','draft','freeagency'].includes(S.phase)}
 // most salary an over-the-cap team can take back (2023 CBA tiers; apron teams get 100%)
 function matchLimit(out,after){
   if(after>APRON1)return out;
@@ -4383,6 +4470,7 @@ const tradeNames=(ps,ks)=>[...ps.map(pid=>pById(pid).name),...ks.map(id=>pickLab
 // the extras on the trade screen: cash, protections on firsts you send, swap rights
 const tradeX=()=>({cash:UI.cash||0,prot:UI.prot||{},swG:[...(UI.swG||[])],swY:[...(UI.swY||[])]});
 function doTrade(tid,mine,theirs,mk,tk,X=0){
+  const gr0=[teamOvr(S.userTid),teamOvr(tid)],grU=tradeVals(S.userTid,theirs.map(pById),mine.map(pById),tk.map(pickById),mk.map(pickById)),grT=tradeVals(tid,mine.map(pById),theirs.map(pById),mk.map(pickById),tk.map(pickById)),sentNames=tradeNames(mine,mk);
   const XO=typeof X==='object'&&X?X:{cash:X||0},cash=XO.cash||0;
   mk.forEach(id=>{const k=pickById(id),n=(XO.prot||{})[id];if(n&&protOk(k)){k.prot=n;k.from=S.userTid}});
   (XO.swG||[]).forEach(s=>(S.swaps=S.swaps||[]).push({season:s,holder:S.userTid,grantor:tid}));
@@ -4398,6 +4486,7 @@ function doTrade(tid,mine,theirs,mk,tk,X=0){
   const gotNames=tradeNames(theirs,tk);
   mine.forEach(pid=>{const p=pById(pid);p.tid=tid;p.agg=aggUntil();p.acqTick=S.tick;newTeamMood(p)});theirs.forEach(pid=>{const p=pById(pid);p.tid=S.userTid;p.agg=aggUntil();p.acqTick=S.tick;newTeamMood(p)});
   mk.forEach(id=>pickById(id).owner=tid);tk.forEach(id=>pickById(id).owner=S.userTid);
+  (S.tradeLog=S.tradeLog||[]).unshift({s:S.season,d:S.day,ph:S.phase,a:S.userTid,b:tid,aGot:gotNames,bGot:sentNames,you:1,ga:tradeScore(grU,teamOvr(S.userTid)-gr0[0]),gb:tradeScore(grT,teamOvr(tid)-gr0[1])});S.tradeLog.length=Math.min(S.tradeLog.length,80);
   S.offers=S.offers.filter(o=>o.tm.every(id=>pById(id)&&pById(id).tid===S.userTid)&&o.tt.every(id=>pById(id)&&pById(id).tid===o.tid));
   S.pressMem.trades++;
   dmCheck();
@@ -4528,9 +4617,9 @@ const recentlyMoved=p=>lockOn(p)||p.acqTick!=null&&S.tick-p.acqTick<=60; // no f
 // every few days one deal, for one of several reasons: a player asked out, a rebuilder sells a veteran (to contenders,
 // and at the deadline to teams in the race), a contender buys an upgrade, a team over its budget dumps salary, or two
 // teams swap from a crowded position to a thin one
-function aiTrades(){
-  if(!tradeOpen()||(S.aiTrades||0)>=AI_TRADES_PER_SEASON)return;
-  const ready=tid=>tid!==S.userTid&&S.tick-(T(tid).lastTrade??-99)>=20; // about three weeks between deals per team
+function aiTrades(rush){
+  if(!tradeOpen()||(S.aiTrades||0)>=AI_TRADES_PER_SEASON+(rush?4:0))return;
+  const ready=tid=>tid!==S.userTid&&S.tick-(T(tid).lastTrade??-99)>=(rush?8:20); // about three weeks between deals per team
   const ais=S.teams.map(t=>t.tid).filter(ready);if(ais.length<2)return;
   const rk=ovrRanks(),sl=pickSlots(),M={};ais.forEach(t=>M[t]=teamMode(t,rk));
   const X={ais,M,sl,race:aiRace()};
@@ -4626,6 +4715,7 @@ function aiDraftTrade(){
   }
 }
 function aiDoTrade(a,b,aP,bP,aK,bK,why){
+  const o0=[teamOvr(a),teamOvr(b)],va=tradeVals(a,bP,aP,bK,aK),vb=tradeVals(b,aP,bP,aK,bK);
   const nm=(ps,ks)=>[...ps.map(p=>p.name),...ks.map(k=>pickLabel(k)+' pick')].join(' and ')||'nothing';
   const WHY={request:aP[0]?` ${aP[0].name} had asked out.`:'',dump:` The ${T(a).nick} cleared salary.`,upgrade:` The ${T(b).nick} went shopping for a contender's upgrade.`,draft:` The ${T(a).nick} moved down on draft night.`};
   news(`Trade: the ${tname(a)} sent ${nm(aP,aK)} to the ${tname(b)} for ${nm(bP,bK)}.${WHY[why]||''}`);
@@ -4633,7 +4723,7 @@ function aiDoTrade(a,b,aP,bP,aK,bK,why){
   aP.forEach(p=>{p.tid=b;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});bP.forEach(p=>{p.tid=a;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});
   aK.forEach(k=>k.owner=b);bK.forEach(k=>k.owner=a);
   T(a).lastTrade=T(b).lastTrade=S.tick;S.aiTrades=(S.aiTrades||0)+1;
-  (S.tradeLog=S.tradeLog||[]).unshift({s:S.season,a,b,aGot:nm(bP,bK),bGot:nm(aP,aK),why});
+  (S.tradeLog=S.tradeLog||[]).unshift({s:S.season,d:S.day,ph:S.phase,a,b,aGot:nm(bP,bK),bGot:nm(aP,aK),why,ga:tradeScore(va,teamOvr(a)-o0[0]),gb:tradeScore(vb,teamOvr(b)-o0[1])});S.tradeLog.length=Math.min(S.tradeLog.length,80);
   S.offers=S.offers.filter(o=>o.tt.every(id=>pById(id)&&pById(id).tid===o.tid));
   UI.finder=null;
 }
@@ -5832,6 +5922,56 @@ function considerHof(p){
   S.hof.unshift({name:p.name,s:S.season,score,teams,titles:p.titles||0,awards:Object.entries(aw).map(([k,v])=>`${v>1?v+'× ':''}${k}`).join(', ')});
   news(`${p.name} retired and is headed to the Hall of Fame.`);
 }
+// ---------- deadline day ----------
+// how a deal looks for one side: value in vs out on its own board, plus how much better it is right now
+function tradeVals(tid,inP,outP,inK,outK){
+  const mode=teamMode(tid),sl=pickSlots(),v=(ps,ks)=>ps.reduce((s,p)=>s+tradeValue(p,mode,tid),0)+ks.reduce((s,k)=>s+pickValue(k,mode,sl,tid),0);
+  return {mode,got:v(inP,inK),gave:v(outP,outK)};
+}
+const tradeScore=(x,dOvr)=>r1((x.got-x.gave)/Math.max(15,Math.abs(x.got),Math.abs(x.gave))*10+dOvr*(x.mode==='contending'?2:x.mode==='middle'?1:.3));
+const DL_GR=[[5,'A+'],[3.5,'A'],[2.5,'A-'],[1.5,'B+'],[.5,'B'],[-.5,'B-'],[-1.5,'C+'],[-2.5,'C'],[-4,'D'],[-999,'F']]; // both sides usually like a deal on their own board, so B sits a little above even
+const dlOn=()=>S.phase==='regular'&&S.day===deadlineDay()-1;
+const dlClosed=()=>!!(S.dl&&S.dl.s===S.season&&S.dl.done);
+function dlWindow(){const D=deadlineDay();return (S.tradeLog||[]).filter(x=>x.s===S.season&&x.ph==='regular'&&x.d!=null&&x.d>=D-15&&x.d<D)}
+// pencils down: the last hour's deals, then the market is closed for the day
+function deadlineHour(){
+  if(dlClosed()||!dlOn())return 0;
+  const n0=(S.tradeLog||[]).length;S.dl={s:S.season,done:false};
+  for(let i=0;i<5;i++)aiTrades(true);
+  S.dl.done=true;S.dl.hourN=(S.tradeLog||[]).length-n0;return S.dl.hourN;
+}
+function deadlineRecap(){
+  if(S.dlr&&S.dlr.s===S.season)return;
+  const m={},w=dlWindow();
+  for(const x of w)for(const [tid,sc,got,gave] of [[x.a,x.ga,x.aGot,x.bGot],[x.b,x.gb,x.bGot,x.aGot]]){if(sc==null)continue;const r=m[tid]=m[tid]||{tid,sc:0,n:0,got:[],gave:[]};r.sc+=sc;r.n++;r.got.push(got);r.gave.push(gave)}
+  const rows=Object.values(m).map(r=>({...r,sc:r1(r.sc),g:DL_GR.find(([v])=>r.sc>=v)[1]})).sort((a,b)=>b.sc-a.sc);
+  S.dlr={s:S.season,rows,n:w.length};
+  const me=rows.find(r=>r.tid===S.userTid),best=rows[0],an=g=>/^[AF]/.test(g)?'an':'a';
+  news(`Deadline grades: ${best&&best.sc>=1.5?`the ${tname(best.tid)} won the deadline (${best.g})`:best?`no big winners; the ${tname(best.tid)} did best (${best.g})`:'a quiet deadline around the league'}${me?(me===best?', and that was you':`; your moves got ${an(me.g)} ${me.g}`):'; you stood pat'}. The full recap is on the Trade tab.`,1);
+}
+const dlLine=x=>`${T(x.a).abbr} get ${x.aGot}; ${T(x.b).abbr} get ${x.bGot}.`;
+function dlPanel(){
+  if(dlOn()){
+    const w=dlWindow(),closed=dlClosed(),hn=closed?S.dl.hourN||0:0,hour=w.slice(0,hn),earlier=w.slice(hn),n=liveOffers().length,an=!!UI.dlAnim;
+    const item=(x,i,anim)=>`<li class="${anim&&an?'dl-new':''}" style="${anim&&an?`animation-delay:${i*.9}s`:''}">${chip(x.a)} ${chip(x.b)} ${x.you?'<b>Your deal:</b> ':''}${esc(dlLine(x))}${anim?'':` <span class="muted">day ${x.d+1}</span>`}</li>`;
+    return `<div class="panel callout dl"><div class="spread"><h2>Trade deadline day</h2><span class="muted">${closed?'Pencils down':"Deals close after today's games"}</span></div>
+     ${closed?`<h3>The last hour</h3>${hour.length?`<ul class="dl-list">${hour.map((x,i)=>item(x,i,true)).join('')}</ul>`:'<p class="muted">The phones went quiet. No deals in the last hour.</p>'}<p class="${an?'dl-new':''}" style="${an?`animation-delay:${hour.length*.9}s`:''}"><b>The deadline has passed.</b> Rosters are set for the stretch run. Deadline grades come out tomorrow.</p>`
+      :`<p>Contenders are making their last calls. ${n?`You have <b>${n}</b> offer${n>1?'s':''} on the table.`:'No offers on your desk right now.'} When you're done dealing, call pencils down and watch the last hour's deals come in.</p>
+       <div class="row">${n?'<button class="btn" data-act="offersShow">See offers</button>':''}<button class="btn" data-act="tab" data-arg="trade">Make a trade</button><button class="btn primary" data-act="dlRun">Pencils down</button></div>`}
+     <h3>Deals in the last two weeks</h3>${earlier.length?`<ul class="dl-list">${earlier.map(x=>item(x,0,false)).join('')}</ul>`:'<p class="muted">None yet.</p>'}</div>`;
+  }
+  if(S.dlr&&S.dlr.s===S.season&&S.phase==='regular'&&S.day<deadlineDay()+10)return dlRecap(true);
+  return '';
+}
+function dlRecap(short){
+  const R=S.dlr,u=S.userTid,me=R.rows.find(r=>r.tid===u),rows=short?R.rows.slice(0,3):R.rows,cls=g=>/^A/.test(g)?'good':/^[DF]/.test(g)?'bad':'';
+  const tr=r=>`<tr class="${r.tid===u?'you':''}"><td class="l"><b class="num ${cls(r.g)}">${r.g}</b></td><td class="l" style="white-space:nowrap">${chip(r.tid)} ${T(r.tid).nick}</td><td class="l" style="white-space:normal;min-width:14rem">Got ${esc(r.got.join('; '))}. Sent ${esc(r.gave.join('; '))}.</td></tr>`;
+  return `<div class="panel"><div class="spread"><h2>Deadline grades</h2><span class="muted">${R.n} deal${R.n===1?'':'s'} in the last two weeks</span></div>
+   ${R.rows.length?`<div class="scroll"><table><thead><tr><th class="l">Grade</th><th class="l">Team</th><th class="l">Moves</th></tr></thead><tbody>${rows.map(tr).join('')}${short&&me&&!rows.includes(me)?tr(me):''}</tbody></table></div>`:'<p class="muted">Nobody made a move.</p>'}
+   ${me?'':'<p>You stood pat at the deadline.</p>'}
+   ${short?'<button class="btn small" data-act="tab" data-arg="trade">All grades</button>':'<p class="muted" style="font-size:.85rem">Grades weigh what each team got against what it gave, valued the way that team values players and picks (contenders care about now, rebuilders about later), plus how much better it got right away.</p>'}</div>`;
+}
+
 // ---------- trade finder ----------
 // "Get this player": cheapest packages (1-2 of your players, optionally plus one pick, or picks alone) the owner accepts
 function findFor(pid){
@@ -6249,7 +6389,7 @@ function guidance(){
   switch(S.phase){
     case 'regular':{
       const left=deadlineDay()-S.day;
-      return `<h3>Front office desk</h3><p>${left>0?`The trade deadline is in <b>${left} days</b>. Contenders pay for veterans; rebuilding teams want youth and expiring deals.`:'The deadline has passed. Ride out the season, or sign minimum-salary free agents to fill holes.'}</p>`;}
+      return `<h3>Front office desk</h3><p>${left>0?`${left>1?`The trade deadline is in <b>${left} days</b>.`:'<b>Today is the trade deadline.</b>'} Contenders pay for veterans; rebuilding teams want youth and expiring deals.`:'The deadline has passed. Ride out the season, or sign minimum-salary free agents to fill holes.'}</p>`;}
     case 'playoffs':if(piOn())return `<h3>Play-in</h3><p>${piGame(u,true)?'Your play-in game is next. Win and you are in; the 7 vs 8 loser gets a second chance at the 8 seed.':S.po.seeded.includes(u)?'You have a top-6 seed. The play-in decides the 7 and 8 seeds, then the first round starts.':piGame(u)?'Your season ended in the play-in. Lottery night follows the Finals.':'You missed the playoffs. Lottery night follows the Finals.'}</p>`;
       return `<h3>Playoffs</h3><p>${S.po.seeded.includes(u)?'Your team is in the bracket. Sim game by game to follow your series.':'You missed the playoffs. Under the 3-2-1 lottery every team outside the top 7 seeds gets balls, and the three worst records get fewer; lottery night follows the Finals.'}</p>`;
     case 'lottery':{const L=S.lotto,mine=S.draft.order.map((t,i)=>t===u?i+1:0).filter(Boolean);
@@ -6286,7 +6426,7 @@ function renderHome(){
   const ch=chemOf(u),chTxt=`<p><b>Chemistry:</b> <span class="${chemCls(ch)}">${ch} · ${chemLabel(ch)}</span>${ch<50?' <span class="muted">· see Roster for why</span>':''}</p>`;
   const vac=ROLES.filter(([r])=>!T(u).staff[r]).map(([,l])=>l.toLowerCase());
   const vacTxt=vac.length?`<p><b class="bad">No ${vac.join(', ')}.</b> <button class="btn small" data-act="tab" data-arg="staff">Hire on the Staff tab</button></p>`:'';
-  return `<div class="home"><div class="home-top">${decStrip()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${prHome()}${cupTxt}${next}</div></div>
+  return `<div class="home"><div class="home-top">${decStrip()}${dlPanel()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${prHome()}${cupTxt}${next}</div></div>
   <aside class="panel home-side"><div class="spread"><h3>News</h3><div class="row">${[['','All'],['mine','Your team']].map(([k,l])=>`<button class="btn small${(UI.newsF||'')===k?' primary':''}" data-act="newsF" data-arg="${k}">${l}</button>`).join('')}</div></div><ul class="news">${S.news.filter(n=>UI.newsF!=='mine'||n.m).slice(0,60).map(n=>`<li><span>${n.d?`${n.s!==S.season?n.s+' ':''}${esc(n.d)}`:n.s}</span><span>${esc(n.txt)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul></aside>
   <div class="home-rest"><div class="panel"><div class="spread"><h3>Last game</h3>${S.lastBox&&S.lastBox.id&&gameLog(S.lastBox.id)?`<button class="btn small" data-act="game" data-arg="${S.lastBox.id}">Game page: flow and play-by-play</button>`:''}</div>${S.lastBox&&S.lastBox.recap?`<p>${esc(S.lastBox.recap)}</p>`:''}${renderBox()}</div>
   ${renderRace()}<div class="grid2">
@@ -7616,8 +7756,9 @@ function renderAsk(){
 }
 // sims one day at a time so the watch prompt can stop before a big game; skip lets the first day through after "Sim it"
 // what a sim day can bring that's worth stopping for: a new decision, or a rotation player out 5+ games
-function simWatch(){const u=S.userTid;return {s:noteState(),inj:roster(u).sort((a,b)=>b.ovr-a.ovr).slice(0,8).filter(p=>p.inj&&p.inj.g>=5).map(p=>p.pid)}}
+function simWatch(){const u=S.userTid;return {d:S.day,s:noteState(),inj:roster(u).sort((a,b)=>b.ovr-a.ovr).slice(0,8).filter(p=>p.inj&&p.inj.g>=5).map(p=>p.pid)}}
 function simWhy(w){
+  if(S.userTid!=null&&dlOn()&&w.d!==S.day&&!dlClosed())return "it's trade deadline day, and deals close after today's games";
   if(S.userTid==null||S.opts&&S.opts.pauseDec===false)return null;
   const s=noteState(),o=w.s; // trade offers wait a week, so they don't stop the sim
   if(S.owner&&S.owner.msg&&s.w!==o.w)return `${ownName()} sent you a message`;
@@ -7927,8 +8068,9 @@ function tradeViewSwitch(){
   return `<div class="row" role="group" aria-label="Trade view" style="margin-bottom:.8rem">${[['build','Build a trade'],['search','Find trade targets']].map(([k,l])=>`<button class="btn tog${v===k?' on':''}" data-act="tview" data-arg="${k}" aria-pressed="${v===k}">${l}</button>`).join('')}</div>`;
 }
 function renderTrade(){
-  if(UI.tview==='search')return tradeViewSwitch()+renderTargets();
-  return tradeViewSwitch()+renderTradeBuild();
+  const dl=dlOn()?dlPanel():S.dlr&&S.dlr.s===S.season&&S.phase==='regular'?dlRecap(false):'';
+  if(UI.tview==='search')return dl+tradeViewSwitch()+renderTargets();
+  return dl+tradeViewSwitch()+renderTradeBuild();
 }
 function renderTradeBuild(){
   const open=tradeOpen();
@@ -8124,7 +8266,7 @@ function renderHistory(){
   const extra=`<div class="grid2"><div class="panel"><h3>Your rivalries</h3>${rivals.length?`<div class="scroll tall"><table><tbody>${rivals.map(r=>`<tr><td class="l">${chip(r.x.tid)} ${r.x.city} ${r.x.nick}</td><td><div class="meter" style="width:120px"><i class="${r.v>=RIVAL?'tax':''}" style="width:${Math.min(100,r.v/40*100)}%"></i></div></td><td>${r.v>=RIVAL?'<span class="pill bad">Rivalry</span>':'<span class="muted">Simmering</span>'}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No rivals yet.</p>'}
    <p class="muted" style="font-size:.85rem">Playoff series (especially seven-gamers) and close games build heat, which cools a little each season. Rivalry games sell 15% more and swing fan hype twice as hard.</p></div>
    <div class="panel"><h3>Hall of Fame</h3>${S.hof.length?`<div class="scroll tall"><table><thead><tr><th class="l">Class</th><th class="l">Player</th><th class="l">Teams in this league</th><th class="l">Honors</th></tr></thead><tbody>${S.hof.map(h=>`<tr><td class="l">${h.s}</td><td class="l"><b>${esc(h.name)}</b></td><td class="l">${esc(h.teams)||'–'}</td><td class="l" style="white-space:normal">${esc([h.titles?`${h.titles} title${h.titles>1?'s':''}`:'',h.awards].filter(Boolean).join(', '))||'<span class="muted">No honors in this league</span>'}${HOF_PRE[h.name]?`<br><span class="muted">Before: ${esc(HOF_PRE[h.name])}</span>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Retired greats with 150+ Hall of Fame points are inducted here.</p>'}</div></div>`;
-  return `${awards}${lotto}${renderRecords()}${extra}<div class="grid2"><div class="panel"><h3>Your seasons</h3><div class="scroll tall"><table><thead><tr><th class="l">Season</th><th>W</th><th>L</th><th class="l">Result</th></tr></thead><tbody>${t.hist.map(h=>`<tr><td class="l">${h.s}</td><td>${h.w}</td><td>${h.l}</td><td class="l">${h.res==='Champion'?'<b class="good">Champion</b>':h.res}</td></tr>`).join('')||'<tr><td class="l muted" colspan="4">Finish a season to see it here.</td></tr>'}</tbody></table></div></div>
+  return `${awards}${lotto}${renderLegends()}${renderRecords()}${extra}<div class="grid2"><div class="panel"><h3>Your seasons</h3><div class="scroll tall"><table><thead><tr><th class="l">Season</th><th>W</th><th>L</th><th class="l">Result</th></tr></thead><tbody>${t.hist.map(h=>`<tr><td class="l">${h.s}</td><td>${h.w}</td><td>${h.l}</td><td class="l">${h.res==='Champion'?'<b class="good">Champion</b>':h.res}</td></tr>`).join('')||'<tr><td class="l muted" colspan="4">Finish a season to see it here.</td></tr>'}</tbody></table></div></div>
   <div class="panel"><h3>Champions</h3><div class="scroll tall"><table><tbody>${S.champs.map(c=>`<tr class="${c.tid===S.userTid?'you':''}"><td class="l">${c.s}</td><td class="l">${chip(c.tid)} ${esc(c.name)}</td><td>${(S.wrapHist||[]).some(w=>w.s===c.s)?`<button class="btn small" data-act="wrapReview" data-arg="${c.s}">Season review</button>`:''}</td></tr>`).join('')||'<tr><td class="l muted">No champion crowned yet.</td></tr>'}</tbody></table></div>
   ${S.cupHist.length?`<h3>In-Season Cup</h3><div class="scroll tall"><table><tbody>${S.cupHist.map(c=>`<tr class="${c.tid===S.userTid?'you':''}"><td class="l">${c.s}</td><td class="l">${chip(c.tid)} ${T(c.tid).nick} <span class="muted">${c.score} over ${T(c.ru).abbr}</span></td><td class="l">${c.mvp?`MVP ${esc(c.mvp)}`:''}</td></tr>`).join('')}</tbody></table></div>`:''}
 </div></div>`;
@@ -8198,6 +8340,7 @@ document.addEventListener('click',e=>{
     case 'offerAccept':acceptOffer(num);break;
     case 'offerDecline':S.offers=S.offers.filter(o=>o.id!==num);break;
     case 'offersShow':openInbox('needs');break;
+    case 'dlRun':{const n=deadlineHour();UI.dlAnim=true;setTimeout(()=>{UI.dlAnim=false},(n+2)*900);break}
     case 'closeOffers':UI.offers=false;break;
     case 'offerOpen':{const o=S.offers.find(x=>x.id===num);if(!o)break;UI.offers=false;clearTrade();UI.tview='build';UI.tradeTid=o.tid;o.tm.forEach(x=>UI.tm.add(x));o.tt.forEach(x=>UI.tt.add(x));o.pm.forEach(x=>UI.pm.add(x));o.pt.forEach(x=>UI.pt.add(x));UI.tab='trade';break}
     case 'setPrice':{const v=parseInt(document.getElementById('ticketPrice').value,10);if(!(v>=20&&v<=400)){toast('Enter an average ticket price between $20 and $400.');return}
