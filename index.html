@@ -522,7 +522,7 @@ function mineTxt(txt){
 // batch holds what this sim produced until the next render shows it
 const NOTE={depth:0,batch:[]},NOTES_KEEP=120;
 // force: league news worth an alert even though it isn't about your team
-const newsWhen=()=>!S||S.phase==null?'':S.phase==='regular'?`Day ${Math.min(S.day+1,S.sched.length)}`:S.phase==='freeagency'?`FA day ${S.faDay||1}`:({playoffs:'Playoffs',lottery:'Lottery',combine:'Combine',draft:'Draft',resign:'Re-sign'})[S.phase]||'';
+const newsWhen=()=>!S||S.phase==null?'':S.phase==='regular'?`Day ${Math.min(S.day+1,S.sched.length)}`:S.phase==='freeagency'?`FA day ${S.faDay||1}`:S.phase==='playoffs'&&S.po&&S.po.off?'Offseason':({playoffs:'Playoffs',lottery:'Lottery',combine:'Combine',draft:'Draft',resign:'Re-sign'})[S.phase]||'';
 function news(txt,force){const n={s:S.season,d:newsWhen(),txt};if(mineTxt(txt))n.m=1;S.news.unshift(n);S.news=S.news.filter(x=>x.s>=S.season-1).slice(0,NEWS_KEEP);if(NOTE.depth&&(n.m||force))noteNews(txt)}
 
 function calcOvr(r){return Math.round(r.ins*.19+r.thr*.19+r.pas*.15+r.reb*.14+r.def*.17+r.ath*.16)}
@@ -1195,6 +1195,11 @@ const ftPct=r=>clamp(.74+(r.thr-50)*.004+(r.ins-50)*.001,.45,.93);
 // clutch: a hidden trait hashed from the player id, like his other unseen numbers; it nudges makes in close, late games
 const clutchOf=p=>Math.round(clamp(50+hnorm(p.pid,23)*15,5,95));
 const clutchAdj=(C,p)=>C.clutch?(clutchOf(p)-50)*.0008:0;
+// who grabs the rebound / makes the pass: role first, then ratings. Tuned so leaders land near real NBA numbers
+// (about 13-15 rebounds and 10-11 assists) while team totals stay where they were
+const REB_POS={C:1.15,PF:1.05,SF:.95,SG:.85,PG:.8},AST_POS={PG:1.3,SG:1,SF:.9,PF:.8,C:.8};
+const rebW=x=>(REB_POS[x.p.pos]||1)*Math.max(10,x.p.r.reb-10);
+const astW=x=>(AST_POS[x.p.pos]||1)*Math.exp((x.p.r.pas-50)/14);
 // one trip down the floor. cx (late-game plays only): sh shooter, three forced shot type, b3 lean toward threes, heave a desperation shot
 function poss(o,d,hb,cx){
   o.poss++;o.mk=0;const L=o.L;
@@ -1217,7 +1222,7 @@ function poss(o,d,hb,cx){
     const sty=L&&!three?shotStyle(r):0;
     if(rnd()<pm){
       const v=three?3:2;b.fgm++;if(three)b.tpm++;b.pts+=v;o.mk=sh.p.pid;
-      let ap=0;if(rnd()<.6){const ax=wpick(o.five,x=>x===sh?0:Math.pow(x.p.r.pas,2.4));if(ax!==sh){ap=ax.p.pid;o.box.get(ap).ast++}}
+      let ap=0;if(rnd()<.6){const ax=wpick(o.five,x=>x===sh?0:astW(x));if(ax!==sh){ap=ax.p.pid;o.box.get(ap).ast++}}
       let and1=0;if(!three&&rnd()<.05){foul(d,fouler(d));b.fta++;if(rnd()<.75){b.ftm++;b.pts++;and1=1}}
       if(o.clutch){b.cfm++;b.cp+=v+and1}
       if(L)L.push([o.side,o.t,three?EV.M3:EV.M2,sh.p.pid,ap,and1+2*sty]);
@@ -1225,8 +1230,8 @@ function poss(o,d,hb,cx){
     }
     let bp=0;if(!three&&rnd()<.16){bp=wpick(d.five,x=>x.p.r.def*x.p.r.reb).p.pid;d.box.get(bp).blk++}
     if(L)L.push([o.side,o.t,three?EV.X3:EV.X2,sh.p.pid,bp,sty]);
-    if(rnd()<clamp(.24+(o.reb-d.reb)*.006,.1,.4)){const rp=wpick(o.five,x=>Math.pow(x.p.r.reb,2.5)).p.pid;o.box.get(rp).reb++;if(L)L.push([o.side,o.t,EV.OR,rp,0,0]);continue}
-    const rp=wpick(d.five,x=>Math.pow(x.p.r.reb,2.5)).p.pid;d.box.get(rp).reb++;if(L)L.push([d.side,o.t,EV.DR,rp,0,0]);return 0;
+    if(rnd()<clamp(.24+(o.reb-d.reb)*.006,.1,.4)){const rp=wpick(o.five,rebW).p.pid;o.box.get(rp).reb++;if(L)L.push([o.side,o.t,EV.OR,rp,0,0]);continue}
+    const rp=wpick(d.five,rebW).p.pid;d.box.get(rp).reb++;if(L)L.push([d.side,o.t,EV.DR,rp,0,0]);return 0;
   }
   return 0;
 }
@@ -1913,6 +1918,22 @@ function goalStatus(gl){
     case 'young':{const ys=roster(S.userTid).filter(p=>p.age<=24&&p.ovr>=55);return [ys.length>=gl.t,ys.length?ys.map(p=>lastName(p)).join(', '):'None yet']}
   }
 }
+// beating expectations: wins over October's projection (+1 per 3, up to +6) and playoff rounds won beyond what the
+// seed suggests (+4 a round, up to +12; halved when a playoff-round goal already paid for it). Never negative:
+// falling short is what the goals are for
+const SEED_EXP=[1.5,1.2,.8,.8,.5,.5,.2,.2];
+function beatExp(sw,paid){
+  const u=S.userTid,t=T(u),out={v:0,lines:[]};
+  const ex=S.preW&&S.preW.s===S.season?S.preW.w[u]:null;
+  if(ex!=null){const v=Math.round(Math.min(6,Math.floor((t.w-ex)/3))*sw);if(v>0){out.v+=v;out.lines.push(`Won ${t.w} games, ${Math.round(t.w-ex)} more than projected in October (+${v})`)}}
+  const s=S.po&&S.po.rounds[0]&&S.po.rounds[0].find(x=>x.a===u||x.b===u);
+  if(s){
+    const seed=s.a===u?s.sa:s.sb,won=S.po.champ===u?4:S.po.rounds.reduce((n,r,i)=>r.some(x=>x.a===u||x.b===u)?i:n,0);
+    const v=Math.round(Math.min(12,4*(won-(SEED_EXP[seed-1]||0)))*sw*(paid?.5:1));
+    if(v>0&&won>0){out.v+=v;out.lines.push(`${['','Won a playoff series','Reached the conference finals','Reached the Finals','Won the title'][won]} as the ${seed}${['th','st','nd','rd'][seed]||'th'} seed (+${v})`)}
+  }
+  return out;
+}
 // end-of-season review: met goals add security, missed ones cost it
 function reviewOwner(){
   if(!S.owner)return;
@@ -1924,6 +1945,7 @@ function reviewOwner(){
   for(const gl of o.goals){const [ok]=goalStatus(gl),v=ok?Math.round(gl.w*.6*sw):-Math.round(gl.w*miss*sw*(first?.5:1));delta+=v;lines.push(`${ok?'Met':'Missed'}: ${goalText(gl)} (${v>0?'+':''}${v})`);if(gl.k==='profit'||gl.k==='noloss')books=ok}
   const champ=S.po&&S.po.champ===S.userTid,tb=otr('competitor')?40:30;
   if(champ){delta+=tb;lines.push(`Won the championship (+${tb})`)}
+  {const xb=beatExp(sw,o.goals.some(gl=>(gl.k==='round2'||gl.k==='conf')&&goalStatus(gl)[0]));delta+=xb.v;lines.push(...xb.lines)}
   if(o.dm)dmSettle(false,'We ran out of season.');
   for(const p of (o.pl||[]).filter(p=>p.k==='playoffs')){const before=o.security;lines.push(settlePledge(p,!!(S.po&&S.po.seeded.includes(S.userTid))));delta+=o.security-before;o.security=before}
   o.pl=[];o.nrev=(o.nrev||0)+1;
@@ -1931,7 +1953,8 @@ function reviewOwner(){
   if(delta<0){const d2=Math.round(delta*trustSoft());if(d2!==delta){lines.push(`Trust ${trustOf()} (${trustWord(trustOf()).toLowerCase()}) ${d2>delta?'softened':'deepened'} the review (${d2-delta>0?'+':''}${d2-delta})`);delta=d2}}
   o.security=clamp(o.security+delta,0,100);
   if(o.ult&&o.ult.s===S.season){const ok=ultMet(o.ult);lines.push(`${ok?'Survived':'Failed'} the ultimatum: ${lc1(ultText(o.ult))}${ok?' (+8)':''}`);if(ok)o.security=clamp(o.security+8,0,100);else o.security=0;o.ult=null}
-  const lim=ownerLimit();if(payroll(S.userTid)<=lim)trustAdd(3,'Stayed within the payroll limit');else trustAdd(-5,`Payroll ended above the ${money(lim)} limit`);
+  const lim=ownerLimit(),pay=payroll(S.userTid),inh=first&&o.pay0!=null&&pay<=o.pay0+3; // minimum-salary fill-ins don't count as adding to it
+  if(pay<=lim)trustAdd(3,'Stayed within the payroll limit');else if(inh)lines.push(`Payroll above the ${money(lim)} limit, but you inherited it: no trust lost in your first season`);else trustAdd(-5,`Payroll ended above the ${money(lim)} limit`);
   if(champ)trustAdd(6,'Won the championship');else if(delta>=12)trustAdd(3,'A strong season');else if(delta<=-15)trustAdd(-3,'A bad season');
   o.met=null;if(o.bonus){o.bonus.pay=0;if(o.bonus.staffLeft&&--o.bonus.staffLeft<=0)o.bonus.staff=0} // a new year of meetings
   const q=ownQuote(delta,champ,o.security<=0,books);
@@ -1945,7 +1968,7 @@ function reviewOwner(){
   }
   gmSummer(champ);
 }
-function newOwner(tid){const id=T(tid).own||(T(tid).own=genOwnerId());S.owner={type:id.type,security:id.tr.includes('loyal')?62:55,trust:id.tr.includes('loyal')?55:50,tlog:[],dlog:[],dm:null,goals:[],hist:(S.owner&&S.owner.hist)||[],season:S.season,nrev:0,log:[],pl:[]};S.ownQ=[];newDeal(gmBase(tid),3);setGoals();ownFire('intro');proposePlan()}
+function newOwner(tid){const id=T(tid).own||(T(tid).own=genOwnerId());S.owner={type:id.type,security:id.tr.includes('loyal')?62:55,trust:id.tr.includes('loyal')?55:50,tlog:[],dlog:[],dm:null,goals:[],hist:(S.owner&&S.owner.hist)||[],season:S.season,nrev:0,log:[],pl:[]};S.owner.pay0=payroll(tid);S.ownQ=[];newDeal(gmBase(tid),3);setGoals();ownFire('intro');proposePlan()}
 function takeJob(tid){
   S.userTid=tid;S.fired=null;UI.tab='home';clearTrade();UI.tradeTid=null;UI.finder=null;UI.renounce.clear();UI.planAdds=[];
   newOwner(tid);news(`You took over the ${tname(tid)}. Your owner: ${ownName()}, ${OWNER_TYPES[S.owner.type].toLowerCase()}.`);
@@ -3192,6 +3215,7 @@ function finishPlayoffs(champ){
   if(!S.fired)pressSeasonEnd();
   wrapStart(champ);
   S.teams.forEach(loyalSeason);
+  S.po.off=1; // from here on the news is about the summer
   S.books=(S.books||0)+1;
   S.teams.forEach(t=>{const tot=finTotal(t.biz.fin);t.biz.finHist.unshift({s:S.season,...tot,fin:t.biz.fin});t.biz.finHist.length=Math.min(t.biz.finHist.length,10);t.biz.fin=newFin()});
   S.players.forEach(p=>{if(p.tid>=0)p.byrs=birdYrs(p)+1});
@@ -3337,15 +3361,19 @@ function develop(p){
 }
 // summer development headlines
 function devNews(){
+  const rum=[];
   for(const p of S.players){
     if(p.tid<0||p.age>25)continue;
     const mine=p.tid===S.userTid;
-    if(p.devEvent==='breakout'&&(mine||p.ovr>=52))news(mine?`${p.name} had a breakout summer (${p.delta>0?'+':''}${p.delta} overall). His ceiling looks higher now.`:`Rumor: ${p.name} (${T(p.tid).abbr}) looks transformed after a breakout summer.`);
+    if(p.devEvent==='breakout'&&(mine||p.ovr>=52)){if(mine)news(`${p.name} had a breakout summer (${p.delta>0?'+':''}${p.delta} overall). His ceiling looks higher now.`);else rum.push(p)}
     else if(mine&&p.devEvent==='bust')news(`${p.name}'s development stalled this summer. Your coaches are less sure about his ceiling.`);
     else if(mine&&p.delta>=5)news(`${p.name} made a big jump this summer (+${p.delta} overall).`);
     else if(mine&&p.ment&&p.delta>=3&&pById(p.ment))news(`${p.name} improved +${p.delta} this summer and credits ${pById(p.ment).name} for taking him under his wing.`);
     if(p.age>24)p.gl=false; // too old for a G League assignment
   }
+  if(rum.length===1)news(`Rumor: ${rum[0].name} (${T(rum[0].tid).abbr}) looks transformed after a breakout summer.`);
+  else if(rum.length){rum.sort((a,b)=>b.ovr-a.ovr);const nm=rum.slice(0,4).map(p=>`${p.name} (${T(p.tid).abbr})`),more=rum.length-nm.length;
+    news(`Rumor: breakout summers around the league for ${more?nm.join(', ')+` and ${more} more`:nm.slice(0,-1).join(', ')+' and '+nm[nm.length-1]}.`)}
 }
 // your scouts' read on a young player's direction (noisy, never exact)
 function devOutlook(p){
@@ -7067,7 +7095,7 @@ function renderBusiness(){
   const owner=`<div class="panel callout"><div class="spread"><div class="own-id">${ownAv(u)}<div><h2>${esc(oi.name)}</h2><span class="muted" style="font-size:.9rem">${OWNER_TYPES[o.type]} · ${OWN_BG[oi.bg][0]} · age ${oi.age} · owner since ${oi.since}</span></div></div><span class="own-meters"><span>Job security <b class="${secCls} num" style="font-size:1.3rem">${sec}</b><span class="muted">/100</span></span><span>Trust <b class="${trustCls(tru)} num" style="font-size:1.3rem">${tru}</b><span class="muted">/100</span></span></span></div>
    <div class="own-bars"><div><small class="muted">Job security: results</small><div class="meter" style="max-width:none"><i class="${sec<30?'tax':sec<60?'over':''}" style="width:${sec}%"></i></div></div>
    <div><small class="muted">Trust: ${trustWord(tru).toLowerCase()}</small><div class="meter" style="max-width:none"><i style="width:${tru}%;background:var(--s3)"></i></div></div></div>
-   <p class="muted">${{win:'Wants a winner now and will spend into the tax for it.',profit:'Watches the bottom line. Stay out of the tax and make money.',patient:'Will wait for a rebuild as long as the fans stay interested and the losses stay small.'}[o.type]} ${OWN_BG[oi.bg][1]} Payroll limit: <b>${money(ownerLimit())}</b>. At 0 job security you're fired.</p>
+   <p class="muted">${{win:'Wants a winner now and will spend into the tax for it.',profit:'Watches the bottom line. Stay out of the tax and make money.',patient:'Will wait for a rebuild as long as the fans stay interested and the losses stay small.'}[o.type]} ${OWN_BG[oi.bg][1]} Payroll limit: <b>${money(ownerLimit())}</b>${S.owner.pay0>ownerLimit()&&(S.owner.nrev||0)<1?` (you inherited ${money(S.owner.pay0)}; no trust lost for it this season unless you add to it beyond minimum-salary fill-ins)`:''}. At 0 job security you're fired. The spring review counts your goals, plus credit for beating October's projection and for a playoff run beyond your seed.</p>
    <p>Mood: <b class="${mdc}">${md}</b> <span class="muted">· ${o.nrev?`${o.nrev} review${o.nrev>1?'s':''} together`:'your first season together'}</span></p>
    <ul class="needs">${oi.tr.map(k=>`<li><span><b>${OWN_TR[k][0]}</b> <span class="muted">${OWN_TR[k][1]}</span></span></li>`).join('')}</ul>
    ${gmBox}
