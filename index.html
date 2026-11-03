@@ -1276,8 +1276,12 @@ function mergeLu(lu){
   }
   for(const [k,[sec,pf,pa]] of Object.entries(lu)){if(sec<1&&!pf&&!pa)continue;const e=S.lu.m[k]||(S.lu.m[k]=[0,0,0,0]);e[0]+=Math.round(sec);e[1]+=pf;e[2]+=pa;e[3]++}
 }
+// regular season only: over 82 nights favorites coast and underdogs play hard, so the rating gap counts a bit less
+// (without it the best team won 70+ and the worst 12; see ROADMAP v86)
+const REG_PULL=.0025;
 function startGame(h,a,record,label){
   const H=teamCtx(h,record&&onB2B(h)),A=teamCtx(a,record&&onB2B(a)),pace=Math.round(100+(H.paceAdj+A.paceAdj)/2+randn()*4);
+  if(S.phase==='regular'){const gap=teamOvr(h)-teamOvr(a);H.offT-=REG_PULL*gap;A.offT+=REG_PULL*gap}
   const mine=h===S.userTid||a===S.userTid,L=mine?[]:null;H.L=A.L=L;H.side=0;A.side=1;
   if(mine&&record){const r=rotOf(S.userTid);if(r.restNext)delete r.restNext}
   if(record)for(const C of [H,A])if(C.tid===S.userTid)C.lu={}; // your five-man units, regular season only
@@ -1507,7 +1511,7 @@ function seasonRecords(){
 function simDays(n){noting(()=>simDays0(n))}
 function simDays0(n){
   if(S.phase!=='regular')return;
-  if(!S.preW||S.preW.s!==S.season)S.preW={s:S.season,w:Object.fromEntries(S.teams.map(t=>[t.tid,expectedWins(t.tid)]))}; // October expectations, for Coach and Executive of the Year
+  if(!S.preW||S.preW.s!==S.season){const pv=ensurePreview();S.preW={s:S.season,w:pv?Object.fromEntries(pv.rows.map(r=>[r.tid,r.w])):Object.fromEntries(S.teams.map(t=>[t.tid,expectedWins(t.tid)]))}} // October expectations, for Coach and Executive of the Year
   for(let k=0;k<n&&S.day<S.sched.length;k++){
     const wasOpen=S.day<deadlineDay();
     for(const g of S.sched[S.day]){
@@ -1554,6 +1558,7 @@ function simDays0(n){
     ownSeasonDay();
     raceDay();
     awardDay();
+    prDay();
     if(cupOn()&&S.day<S.sched.length)cupSetup(S.day);
     if(S.day===tvFlexDay()&&S.userTid!=null){
       const before=tvCount(S.userTid)[1];pickTV(S.day+7);const after=tvCount(S.userTid)[1];
@@ -1875,7 +1880,7 @@ function renderBizEv(){
 const OWNER_TYPES={win:'Win-now owner',profit:'Bottom-line owner',patient:'Patient owner'};
 // payroll the owner will approve
 const ownerLimit=()=>S.owner?({win:221.7,profit:TAX,patient:TAX+10})[S.owner.type]+((S.owner.bonus&&S.owner.bonus.pay)||0)+(otr('pinch')?-5:0)+(otr('spender')?6:0):Infinity;
-function expectedWins(tid){const avg=S.teams.reduce((s,t)=>s+teamOvr(t.tid),0)/30;return Math.round(clamp(41+(teamOvr(tid)-avg)*4.5,15,65))}
+function expectedWins(tid){const avg=S.teams.reduce((s,t)=>s+teamOvr(t.tid),0)/30;return Math.round(clamp(41+(teamOvr(tid)-avg)*3.9,15,65))}
 function setGoals(){
   if(!S.owner)return;
   const o=S.owner,tid=S.userTid,W=expectedWins(tid),hype=T(tid).biz.hype,g=[];
@@ -6281,7 +6286,7 @@ function renderHome(){
   const ch=chemOf(u),chTxt=`<p><b>Chemistry:</b> <span class="${chemCls(ch)}">${ch} · ${chemLabel(ch)}</span>${ch<50?' <span class="muted">· see Roster for why</span>':''}</p>`;
   const vac=ROLES.filter(([r])=>!T(u).staff[r]).map(([,l])=>l.toLowerCase());
   const vacTxt=vac.length?`<p><b class="bad">No ${vac.join(', ')}.</b> <button class="btn small" data-act="tab" data-arg="staff">Hire on the Staff tab</button></p>`:'';
-  return `<div class="home"><div class="home-top">${decStrip()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${cupTxt}${next}</div></div>
+  return `<div class="home"><div class="home-top">${decStrip()}<div class="panel callout">${guidance()}${own}${vacTxt}${demandTxt()}${injTxt}${moodTxt}${chTxt}${prHome()}${cupTxt}${next}</div></div>
   <aside class="panel home-side"><div class="spread"><h3>News</h3><div class="row">${[['','All'],['mine','Your team']].map(([k,l])=>`<button class="btn small${(UI.newsF||'')===k?' primary':''}" data-act="newsF" data-arg="${k}">${l}</button>`).join('')}</div></div><ul class="news">${S.news.filter(n=>UI.newsF!=='mine'||n.m).slice(0,60).map(n=>`<li><span>${n.d?`${n.s!==S.season?n.s+' ':''}${esc(n.d)}`:n.s}</span><span>${esc(n.txt)}</span></li>`).join('')||'<li class="muted">Nothing yet.</li>'}</ul></aside>
   <div class="home-rest"><div class="panel"><div class="spread"><h3>Last game</h3>${S.lastBox&&S.lastBox.id&&gameLog(S.lastBox.id)?`<button class="btn small" data-act="game" data-arg="${S.lastBox.id}">Game page: flow and play-by-play</button>`:''}</div>${S.lastBox&&S.lastBox.recap?`<p>${esc(S.lastBox.recap)}</p>`:''}${renderBox()}</div>
   ${renderRace()}<div class="grid2">
@@ -7717,7 +7722,135 @@ function pickSlotText(k,sl){
   if(k.season===S.season&&k.rd===1&&s<=LOT_N)return `Lottery, proj. #${s} <span class="muted">(${Math.round(lottoTop5(s)*100)}% top 5)</span>${classNote()}`;
   return `${k.season>S.season?'~':''}#${s}${k.season===S.season&&k.rd===1&&!isFut(k)?classNote():''}${fcPill(k)}`;
 }
+// ---------- season preview, power rankings, midseason report ----------
+const PR_TIERS=[[55,'Contenders','a contender'],[46,'Playoff teams','a playoff team'],[38,'Play-in fight','a play-in team'],[30,'Long shots','a long shot'],[0,'Rebuilding','a rebuilding team']];
+const prTier=w=>PR_TIERS.find(([m])=>w>=m);
+const ordn=n=>n+(['th','st','nd','rd'][n%10<4&&(n%100<11||n%100>13)?n%10:0]);
+const topPl=(tid,n)=>roster(tid).slice().sort((a,b)=>b.ovr-a.ovr).slice(0,n);
+// a contender's story in two or three sentences, from the roster on opening day
+function storyline(tid){
+  const [a,b]=topPl(tid,2),ab=T(tid).abbr,out=[],duo=b&&b.ovr>=a.ovr-4;
+  if(a)out.push(`${a.name} (${a.ovr})${duo?` and ${b.name} (${b.ovr}) lead`:' leads'} the way.`);
+  const nw=roster(tid).filter(p=>p.hist&&p.hist[0]&&p.hist[0].s===S.season-1&&p.hist[0].t!==ab&&p.ovr>=55).sort((x,y)=>y.ovr-x.ovr)[0];
+  if(nw)out.push(`New this year: ${nw.name}, who finished last season with ${nw.hist[0].t}.`);
+  const t8=topPl(tid,8),age=t8.reduce((s,p)=>s+p.age,0)/Math.max(1,t8.length);
+  if(age>=29.5)out.push(`One of the oldest rotations in the league (average age ${age.toFixed(1)}).`);
+  else if(age<=24.5)out.push(`A young rotation (average age ${age.toFixed(1)}), so expect it to get better as the season goes.`);
+  const hurt=roster(tid).find(p=>p.inj&&p.inj.g>=10&&p.ovr>=55);if(hurt)out.push(`${hurt.name} starts the year hurt (${hurt.inj.type.toLowerCase()}, about ${hurt.inj.g} games).`);
+  return out.join(' ');
+}
+// what has to go right for your team, up to three lines
+function goRight(tid){
+  const t8=topPl(tid,8),[a,b]=t8,out=[];
+  const old=t8.slice(0,3).find(p=>p.age>=31);if(old)out.push(`${old.name} (age ${old.age}) stays healthy and holds his level.`);
+  const kid=roster(tid).filter(p=>p.age<=23&&p.pot-p.ovr>=6).sort((x,y)=>y.pot-x.pot)[0];if(kid)out.push(`${kid.name} keeps growing during the season.`);
+  if(a&&b&&a.ovr-b.ovr>=8)out.push(`${a.name} carries the load. Nobody else on the roster is within ${a.ovr-b.ovr} points of him.`);
+  if(t8[7]&&t8[7].ovr<48)out.push(`The bench holds up. Your 8th man is rated ${t8[7].ovr}.`);
+  if(payroll(tid)>TAX)out.push('The tax bill pays off in wins.');
+  if(chemOf(tid)<55)out.push(`The locker room comes together (chemistry ${chemOf(tid)}).`);
+  if(!out.length&&a)out.push(`${a.name} plays like the best player on the floor most nights.`);
+  return out.slice(0,3);
+}
+// opening day: projected wins for every team, the same numbers October expectations use
+function ensurePreview(){
+  if(S.prev&&S.prev.s===S.season)return S.prev;
+  if(S.phase!=='regular'||S.userTid==null)return null;
+  const pre=S.preW&&S.preW.s===S.season?S.preW.w:null,u=S.userTid;
+  const rows=S.teams.map(t=>({tid:t.tid,w:pre&&pre[t.tid]!=null?pre[t.tid]:expectedWins(t.tid),o:teamOvr(t.tid)})).sort((a,b)=>b.w-a.w||b.o-a.o);
+  S.prev={s:S.season,day:S.day,rows,story:{},go:{}};
+  rows.slice(0,4).forEach(r=>S.prev.story[r.tid]=storyline(r.tid));
+  S.prev.story[u]=S.prev.story[u]||storyline(u);S.prev.go[u]=goRight(u);
+  if(S.day===0){const me=rows.find(r=>r.tid===u),rk=rows.filter(r=>T(r.tid).conf===T(u).conf).findIndex(r=>r.tid===u)+1;
+    news(`Season preview: the ${T(u).nick} are projected to win ${me.w} games, ${ordn(rk)} in the ${T(u).conf==='E'?'East':'West'}. The full preview is on the Standings tab.`)}
+  return S.prev;
+}
+function last10(tid){let w=0,n=0;for(let d=Math.min(S.day,S.sched.length)-1;d>=0&&n<10;d--){const g=S.sched[d].find(g=>(g.h===tid||g.a===tid)&&g.hs!=null);if(g){n++;if((g.h===tid)===(g.hs>g.as))w++}}return n?[w,n]:null}
+function prBlurb(r){
+  const t=T(r.tid),gp=t.w+t.l,n=t.streak||0,pv=S.prev&&S.prev.s===S.season&&S.prev.rows.find(x=>x.tid===r.tid),pre=pv?pv.w:null,pace=gp?Math.round(t.w/gp*82):0,diff=gp?(t.pf-t.pa)/gp:0;
+  const lead=roster(r.tid).filter(p=>p.st.gp>=5).sort((a,b)=>b.st.pts/b.st.gp-a.st.pts/a.st.gp)[0],o=[],rec=`${t.w}-${t.l}`;
+  if(r.out!=null&&pById(r.out))o.push(`Getting by without ${pById(r.out).name} (${pById(r.out).inj.type.toLowerCase()}).`);
+  if(n>=5)o.push(`Won ${n} straight.`);else if(n<=-5)o.push(`Lost ${-n} in a row.`);
+  if(pre!=null&&gp>=10&&pace-pre>=8)o.push(`On pace for ${pace} wins, well past the ${pre} projected in October.`);
+  if(pre!=null&&gp>=10&&pre-pace>=8)o.push(`On pace for ${pace} wins. October's projection was ${pre}.`);
+  if(gp>=10&&diff>=4&&pct(t)<.55)o.push(`A +${diff.toFixed(1)} point differential says they're better than ${rec}.`);
+  if(gp>=10&&diff<=-3&&pct(t)>.5)o.push(`${rec}, but a ${diff.toFixed(1)} point differential says it may not last.`);
+  if(r.l&&r.l[1]>=8&&(r.l[0]>=8||r.l[0]<=2))o.push(`${r.l[0]}-${r.l[1]-r.l[0]} in their last ${r.l[1]}.`);
+  if(lead&&lead.st.pts/lead.st.gp>=27)o.push(`${lead.name} is averaging ${r1(lead.st.pts/lead.st.gp)} points.`);
+  o.push(r.rk===1?'The team to beat.':r.rk<=4?'Firmly among the contenders.':r.rk<=10?'Solid, still looking for another gear.':r.rk<=18?'In the thick of the play-in race.':r.rk<=24?'Needs a run to stay relevant.':'Thinking about the lottery.');
+  return o.find(x=>x!==r.lastB)||o[0]; // a new line when last week's still fits and another does too
+}
+// every 7 days: record, point differential, last 10 and (early on) roster rating, minus an injured best player
+function powerRank(){
+  const avg=S.teams.reduce((s,x)=>s+teamOvr(x.tid),0)/30,old=S.pr&&S.pr.s===S.season?Object.fromEntries(S.pr.rows.map(r=>[r.tid,r])):{};
+  const rows=S.teams.map(t=>{const gp=t.w+t.l,f=Math.min(1,gp/25),l=last10(t.tid),star=topPl(t.tid,1)[0],out=star&&star.inj&&star.inj.g>=5?star.pid:null;
+    return {tid:t.tid,l,out,sc:f*((pct(t)-.5)*60+(gp?(t.pf-t.pa)/gp:0)*1.6+(l?(l[0]/l[1]-.5)*12:0))+(1-f)*(teamOvr(t.tid)-avg)*4-(out!=null?3:0)}}).sort((a,b)=>b.sc-a.sc);
+  rows.forEach((r,i)=>{r.rk=i+1;r.prev=old[r.tid]?old[r.tid].rk:null;r.lastB=old[r.tid]&&old[r.tid].b;r.b=prBlurb(r)});
+  S.pr={s:S.season,day:S.day,rows:rows.map(({tid,rk,prev,b})=>({tid,rk,prev,b}))};
+  const me=S.pr.rows.find(r=>r.tid===S.userTid);
+  if(me&&(me.prev==null||Math.abs(me.prev-me.rk)>=3||(me.rk===1&&me.prev!==1)))news(`Power rankings: your team is No. ${me.rk}${me.prev==null?'':me.prev>me.rk?`, up ${me.prev-me.rk}`:`, down ${me.rk-me.prev}`}. ${me.b}`);
+}
+const GRADES=[[10,'A+'],[6,'A'],[3,'A-'],[1,'B+'],[-1,'B'],[-3,'B-'],[-6,'C'],[-10,'D'],[-999,'F']];
+function midReport(){
+  const pv=ensurePreview();if(!pv)return;
+  const pace=tid=>{const t=T(tid),gp=t.w+t.l;return gp?t.w/gp*82:41},pre=tid=>(pv.rows.find(x=>x.tid===tid)||{w:41}).w;
+  const d=S.teams.map(t=>({tid:t.tid,d:pace(t.tid)-pre(t.tid)})).sort((a,b)=>b.d-a.d),u=S.userTid,g=GRADES.find(([m])=>pace(u)-pre(u)>=m)[1];
+  let mvp=[];try{mvp=awardCands().mvp.slice(0,3).map(x=>x.id)}catch(e){}
+  const best=roster(u).filter(p=>p.st.gp>=10).map(p=>({p,g:adv(p).gmsc})).sort((a,b)=>b.g-a.g)[0];
+  S.mid={s:S.season,day:S.day,g,w:T(u).w,l:T(u).l,pace:Math.round(pace(u)),pre:pre(u),best:best?best.p.pid:null,up:d[0].tid,upd:Math.round(d[0].d),dn:d[29].tid,dnd:Math.round(-d[29].d),mvp};
+  news(`Midseason report: your team gets ${/^[AF]/.test(g)?'an':'a'} ${g} at ${S.mid.w}-${S.mid.l} (on pace for ${S.mid.pace} wins, projected ${S.mid.pre}). The full report is on the Standings tab.`,1);
+}
+function prDay(){
+  if(S.userTid==null||S.phase!=='regular')return;
+  ensurePreview();
+  if(S.day%7===0&&S.day<S.sched.length)powerRank();
+  if((!S.mid||S.mid.s!==S.season)&&S.day>=Math.floor(S.sched.length/2))midReport();
+}
+const SSECS=[['table','Standings'],['power','Power rankings'],['preview','Season preview']];
 function renderStandings(){
+  const sec=SSECS.some(([k])=>k===UI.ssec)?UI.ssec:'table';
+  const nav=`<div class="row" role="tablist" aria-label="Standings sections">${SSECS.map(([k,l])=>`<button class="btn${sec===k?' primary':''}" role="tab" aria-selected="${sec===k}" data-act="ssec" data-arg="${k}">${l}</button>`).join('')}</div>`;
+  return nav+(sec==='power'?renderPower():sec==='preview'?renderPreview():renderStandTable());
+}
+function prTable(rows){
+  return `<div class="scroll"><table><thead><tr><th class="l">#</th><th class="l"></th><th class="l">Team</th><th>W-L</th><th class="l">Why</th></tr></thead><tbody>${rows.map(r=>{const t=T(r.tid),mv=r.prev==null?0:r.prev-r.rk;
+    return `<tr class="${r.tid===S.userTid?'you':''}"><td class="l num">${r.rk}</td><td class="l num ${mv>0?'good':mv<0?'bad':'muted'}">${r.prev==null?'':mv>0?'▲'+mv:mv<0?'▼'+(-mv):'–'}</td><td class="l" style="white-space:nowrap">${chip(r.tid)} ${t.city} ${t.nick}</td><td class="num">${t.w}-${t.l}</td><td class="l" style="min-width:15rem">${esc(r.b)}</td></tr>`}).join('')}</tbody></table></div>`;
+}
+function renderMid(){
+  const m=S.mid,b=m.best!=null&&pById(m.best),mv=m.mvp.map(id=>pById(id)).filter(Boolean),cls=/^A/.test(m.g)?'good':/^[DF]/.test(m.g)?'bad':'';
+  return `<div class="panel"><div class="spread"><h2>Midseason report</h2><span class="muted">after day ${m.day}</span></div>
+   <div class="row" style="align-items:center;gap:1rem;flex-wrap:nowrap"><b class="num ${cls}" style="font-size:2.6rem;line-height:1">${m.g}</b><span>${m.w}-${m.l} at the halfway mark, on pace for <b>${m.pace}</b> wins. The October projection was <b>${m.pre}</b>.</span></div>
+   <ul>${b&&b.st.gp?`<li>Your best player so far: ${plink(b.pid,b.name)}, ${r1(b.st.pts/b.st.gp)} points, ${r1(b.st.reb/b.st.gp)} rebounds and ${r1(b.st.ast/b.st.gp)} assists a game.</li>`:''}
+   <li>Biggest surprise: ${chip(m.up)} ${tname(m.up)}, on pace for ${m.upd} more wins than projected.</li>
+   <li>Biggest letdown: ${chip(m.dn)} ${tname(m.dn)}, on pace for ${m.dnd} fewer.</li>
+   ${mv.length?`<li>MVP race at the turn: ${mv.map((p,i)=>`${i+1}. ${plink(p.pid,p.name)}${p.tid>=0?` (${T(p.tid).abbr})`:''}`).join(', ')}.</li>`:''}</ul></div>`;
+}
+function renderPower(){
+  const P=S.pr&&S.pr.s===S.season?S.pr:null,mid=S.mid&&S.mid.s===S.season?renderMid():'';
+  const how='<p class="muted" style="font-size:.85rem">Rankings weigh record, point differential and the last 10 games. Early in the season roster rating counts too, and a team loses ground while its best player is out. They update every 7 days.</p>';
+  if(!P){const pv=ensurePreview();return `<div class="panel"><h2>Power rankings</h2><p class="muted">The first rankings come out after week 1.${pv?' Until then, this is the order the season preview projects.':''}</p>${pv?prTable(pv.rows.map((r,i)=>({tid:r.tid,rk:i+1,prev:null,b:`Projected ${r.w} wins.`}))):''}${how}</div>`}
+  return `${mid}<div class="panel"><div class="spread"><h2>Power rankings</h2><span class="muted">Week ${Math.round(P.day/7)} · after day ${P.day}</span></div>${prTable(P.rows)}${how}</div>`;
+}
+function renderPreview(){
+  const pv=ensurePreview(),u=S.userTid;
+  if(!pv)return `<div class="panel"><h2>Season preview</h2><p class="muted">The next preview comes out on opening day.</p></div>`;
+  if(!pv.story[u])pv.story[u]=storyline(u);if(!pv.go[u])pv.go[u]=goRight(u); // you took a new job mid-season
+  const me=pv.rows.find(r=>r.tid===u),rk=pv.rows.filter(r=>T(r.tid).conf===T(u).conf).findIndex(r=>r.tid===u)+1;
+  const conf=c=>{let last='';return `<div class="panel"><h3>${c==='E'?'Eastern':'Western'} Conference</h3><div class="scroll"><table><thead><tr><th class="l">#</th><th class="l">Team</th><th>Projected W</th><th>Rating</th></tr></thead><tbody>${pv.rows.filter(r=>T(r.tid).conf===c).map((r,i)=>{const tr=prTier(r.w)[1],h=tr!==last?`<tr><td class="l muted" colspan="4" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;padding-top:.7rem">${tr}</td></tr>`:'';last=tr;
+    return h+`<tr class="${r.tid===u?'you':''}"><td class="l">${i+1}</td><td class="l" style="white-space:nowrap">${chip(r.tid)} ${T(r.tid).city} ${T(r.tid).nick}</td><td class="num">${r.w}</td><td class="num">${r.o}</td></tr>`}).join('')}</tbody></table></div></div>`};
+  const fav=pv.rows.slice(0,4).map(r=>`<li>${chip(r.tid)} <b>${T(r.tid).city} ${T(r.tid).nick}</b>, ${r.w} projected wins. ${esc(pv.story[r.tid]||'')}</li>`).join('');
+  return `<div class="panel"><div class="spread"><h2>${seasonTxt(S.season)} season preview</h2><span class="muted">Projected on ${pv.day?`day ${pv.day}`:'opening day'}</span></div>
+   <h3>Your team</h3><p>${chip(u)} The ${T(u).nick} are projected to win <b>${me.w}</b> games, ${ordn(rk)} in the ${T(u).conf==='E'?'East':'West'}, which makes them ${prTier(me.w)[2]} on paper. ${esc(pv.story[u]||'')}</p>
+   ${pv.go[u].length?`<p><b>What has to go right</b></p><ul>${pv.go[u].map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+   <h3>The favorites</h3><ul>${fav}</ul><p class="muted" style="font-size:.85rem">Projections come from each roster's rating on opening day. They are the same numbers your owner uses for October expectations.</p></div><div class="grid2">${conf('E')}${conf('W')}</div>`;
+}
+function prHome(){
+  if(S.phase!=='regular')return '';
+  const me=S.pr&&S.pr.s===S.season&&S.pr.rows.find(r=>r.tid===S.userTid);
+  if(!me)return `<p><b>Season preview:</b> projected ${(ensurePreview()||{rows:[]}).rows.filter(r=>r.tid===S.userTid).map(r=>r.w+' wins')[0]||'soon'} <button class="btn small" data-act="tab" data-arg="standings" data-ssec="preview">Read it</button></p>`;
+  const mv=me.prev==null?0:me.prev-me.rk;
+  return `<p><b>Power ranking:</b> No. ${me.rk}${mv?` <span class="${mv>0?'good':'bad'}">${mv>0?'▲':'▼'}${Math.abs(mv)}</span>`:''} <span class="muted">· ${esc(me.b)}</span> <button class="btn small" data-act="tab" data-arg="standings" data-ssec="power">Rankings</button></p>`;
+}
+function renderStandTable(){
   const tbl=c=>`<div class="panel"><h3>${c==='E'?'Eastern':'Western'} Conference</h3><div class="scroll"><table><thead><tr><th class="l">#</th><th class="l">Team</th><th>W</th><th>L</th><th>Pct</th><th>GB</th><th>Diff</th><th>Rating</th></tr></thead><tbody>${confStand(c).map((x,i,a)=>{const gb=((a[0].w-x.w)+(x.l-a[0].l))/2;return `<tr class="${x.tid===S.userTid?'you':''} ${i===5||i===9?'cut':''}"><td class="l">${i+1}</td><td class="l">${chip(x.tid)} ${x.city} ${x.nick}</td><td>${x.w}</td><td>${x.l}</td><td>${pct(x).toFixed(3).replace(/^0/,'')}</td><td>${gb?gb.toFixed(1):'–'}</td><td>${fmtDiff(x)}</td><td>${teamOvr(x.tid)}</td></tr>`}).join('')}</tbody></table></div></div>`;
   return `<div class="grid2">${tbl('E')}${tbl('W')}</div><p class="muted">Seeds 1 to 6 in each conference make the playoffs; 7 to 10 go to the play-in (dashed lines).</p>${renderCup()}`;
 }
@@ -8084,9 +8217,10 @@ document.addEventListener('click',e=>{
     case 'moreShow':UI.more=true;break;
     case 'closeMore':UI.more=false;break;
     case 'rsec':UI.rsec=arg;UI.toTop=true;break;
+    case 'ssec':UI.ssec=arg;UI.toTop=true;break;
     case 'dAll':UI.dAll=!UI.dAll;break;
     case 'jump':UI.jumpTo=arg;break;
-    case 'tab':if(UI.tab!==arg)UI.toTop=true;if(el.dataset.rsec)UI.rsec=el.dataset.rsec;UI.tab=arg;UI.alerts=false;UI.more=false;document.getElementById('toast').hidden=true;if(el.dataset.dpview){UI.rview='dev';UI.player=null}break;
+    case 'tab':if(UI.tab!==arg)UI.toTop=true;if(el.dataset.rsec)UI.rsec=el.dataset.rsec;if(el.dataset.ssec)UI.ssec=el.dataset.ssec;UI.tab=arg;UI.alerts=false;UI.more=false;document.getElementById('toast').hidden=true;if(el.dataset.dpview){UI.rview='dev';UI.player=null}break;
     case 'simday':runSim('reg',1);break;
     case 'simweek':runSim('reg',7);break;
     case 'simreg':runSim('reg',999);break;
