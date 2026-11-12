@@ -1070,7 +1070,7 @@ function cupDay(d){
 }
 
 // ---------- game sim ----------
-const MINS=[36,34,33,32,30,22,18,15,12,8];
+const MINS=[38,36,34,33,31,21,17,14,10,6]; // v88: was 36/34/33/32/30/22/18/15/12/8
 // minute targets by rotation depth; the 10-man plan is the long-standing default
 const PRESETS={8:[38,36,35,34,32,26,21,18],9:[37,35,34,33,31,24,19,15,12],10:MINS};
 const rotOf=tid=>T(tid).rot||{};
@@ -1283,8 +1283,9 @@ function mergeLu(lu){
 // regular season only: over 82 nights favorites coast and underdogs play hard, so the rating gap counts a bit less
 // (without it the best team won 70+ and the worst 12; see ROADMAP v86)
 const REG_PULL=.0025;
+const PACE0=103; // v88: was 100 (110 points a game; the NBA is about 114)
 function startGame(h,a,record,label){
-  const H=teamCtx(h,record&&onB2B(h)),A=teamCtx(a,record&&onB2B(a)),pace=Math.round(100+(H.paceAdj+A.paceAdj)/2+randn()*4);
+  const H=teamCtx(h,record&&onB2B(h)),A=teamCtx(a,record&&onB2B(a)),pace=Math.round(PACE0+(H.paceAdj+A.paceAdj)/2+randn()*4);
   if(S.phase==='regular'){const gap=teamOvr(h)-teamOvr(a);H.offT-=REG_PULL*gap;A.offT+=REG_PULL*gap}
   const mine=h===S.userTid||a===S.userTid,L=mine?[]:null;H.L=A.L=L;H.side=0;A.side=1;
   if(mine&&record){const r=rotOf(S.userTid);if(r.restNext)delete r.restNext}
@@ -2861,7 +2862,7 @@ function staffSummer(){
       const s=t.staff[r];if(!s||s.exp>=S.season)continue;
       if(t.tid!==S.userTid&&s.rating>=65&&rnd()<.7){s.exp=S.season+1+Math.floor(rnd()*3);continue} // AI keeps good staff
       s.exp=0;S.staffPool.push(s);t.staff[r]=null;
-      if(t.tid===S.userTid){news(`Your ${roleName(r).toLowerCase()} ${s.name} left when his contract ended. Hire a replacement on the Staff tab.`);continue}
+      if(t.tid===S.userTid){const tx=`Your ${roleName(r).toLowerCase()} ${s.name} left when his contract ended. Hire a replacement on the Staff tab.`;news(tx,1);toast(tx);continue}
       refillPool();
       const c=S.staffPool.filter(x=>x.role===r&&staffSpend(t.tid)+x.salary<=STAFF_BUDGET).sort((a,b)=>b.rating-a.rating)[Math.floor(rnd()*2)];
       if(c){S.staffPool.splice(S.staffPool.indexOf(c),1);c.exp=S.season+1+Math.floor(rnd()*3);t.staff[r]=c;if(r==='hc'){c.scheme=bestScheme(t.tid);newCoach(t,c);news(`${tname(t.tid)} hired ${c.name} as head coach.`)}}
@@ -2900,7 +2901,7 @@ function awardCands(){
   const prev=x=>x.p.hist[0]&&x.p.hist[0].s===S.season-1&&x.p.hist[0].gmsc!=null?x.p.hist[0]:null;
   const rook=S.players.filter(p=>p.tid>=0&&p.rookieSeason===S.season&&p.st.gp>=Math.max(1,Math.floor(maxGp*.5))).map(p=>({p,a:adv(p)}));
   return {
-    mvp:top(pool,x=>x.a.gmsc+x.w*12+surprise(x.p.tid)*.12,15), // production, team success, and a team that beat its October projection
+    mvp:top(pool,x=>x.a.gmsc+x.w*15+surprise(x.p.tid)*.12,15), // production, team success, and a team that beat its October projection
     dpoy:top(pool,x=>(x.a.spg+x.a.bpg)*3+x.p.r.def*.5+x.a.rpg*.2+x.w*5),
     roy:top(rook,x=>x.a.gmsc+x.a.mpg*.1),
     smoy:top(pool.filter(x=>(x.p.st.gs||0)<x.p.st.gp*.5),x=>x.a.gmsc),
@@ -2929,7 +2930,7 @@ function teamCands(){
 // 100 media voters read the same numbers through their own eyes: a clear case is unanimous, a close one splits the room
 const VOTERS=100,BALLOT={mvp:[10,7,5,3,1]},ballotOf=k=>BALLOT[k]||[5,3,1];
 // voter fatigue: last year's winner has to clear a higher bar, more so after a streak; coaches and front offices tire voters fastest
-const FATIGUE={mvp:1,dpoy:.8,smoy:1,coy:2.5,eoy:2.5};
+const FATIGUE={mvp:2.2,dpoy:.8,smoy:1,coy:2.5,eoy:2.5}; // v88: mvp was 1 (one player could win 10 of 20)
 const awKey=(k,a)=>k==='coy'?a.coy&&a.coy.name:k==='eoy'?a.eoy&&a.eoy.tid:a[k];
 function awHist(k,id){
   let streak=0,older=0;
@@ -3143,7 +3144,7 @@ function moodTag(p){
 // every playoff round (and the play-in) each team draws a streak that lasts the round: shooters on a heater or gone cold,
 // a defense locked in or leaking. One draw per round rather than per game, so it doesn't average out over a series;
 // without it the best team won about two titles in three
-const FORM_SD=.042,FORM_MAX=.1;
+const FORM_SD=.02,FORM_MAX=.05; // v88: was .042/.1, which let 6th-best records win too many titles
 const formOf=tid=>S.phase==='playoffs'&&S.po&&S.po.form&&S.po.form[tid]||null;
 const formTot=f=>f?f.o+f.d:0;
 function drawForm(tids,rd){
@@ -3400,11 +3401,17 @@ const talentLevel=()=>S.teams.reduce((s,t)=>s+roster(t.tid).map(p=>p.ovr).sort((
 // young players outgrow the veterans they replace, so without a check ratings climb every year. Each summer the drift
 // from the league's starting level (S.ovrRef) feeds a correction to everyone's growth: part of it this year's drift,
 // part the drift added up over the years (S.devI)
+// v88: the built-up part leaks back toward its resting value (-.4) each summer and is capped, so a strong first
+// generation can't leave a penalty on the next one for a decade. A second term (S.starAdj) watches the number of
+// 70+ players against the league's start and nudges high-potential young players up or down.
+const STAR_LINE=70;
 function leagueLevel(){
   const lv=talentLevel();if(S.ovrRef==null)S.ovrRef=r1(lv);
-  const d=lv-S.ovrRef;
-  S.devI=clamp((S.devI??-.4)-.08*d,-2,1); // starts a little below zero: the climb is steady, not a one-off
-  S.devAdj=Math.round(clamp(S.devI-.3*d,-2.5,1)*100)/100;
+  const d=lv-S.ovrRef,n=S.players.filter(p=>p.tid>=0&&p.ovr>=STAR_LINE).length;
+  if(S.starRef==null)S.starRef=Math.max(8,n);
+  S.devI=clamp(-.4+.75*((S.devI??-.4)+.4)-.06*d,-1.3,.8); // leaky: about a quarter of the build-up fades each year
+  S.devAdj=Math.round(clamp(S.devI-.2*d,-1.1,.8)*100)/100;
+  S.starAdj=Math.round(clamp((S.starRef-n)*.14,-.6,1.4)*100)/100;
 }
 // AI teams aim their development staff at their young players' weakest skill
 function aiDevFocus(){
@@ -3425,7 +3432,9 @@ function develop(p){
   if(tr.hc==='teach'&&a<=24){base+=.4;W('Head coach (teacher)',.4)}
   if(a<=27){const v=weMult(p);base+=v;W('Work ethic',v)}
   // see leagueLevel: only players still growing, and high-potential players feel it less, so new stars still emerge
-  if(S.devAdj&&rel<0){const v=S.devAdj*clamp((75-p.pot)/25,.5,1);base+=v;W('League talent level',v)}
+  if(S.devAdj&&rel<0){const v=S.devAdj*(S.devAdj<0?clamp((78-p.pot)/20,.3,1):1);base+=v;W('League talent level',v)}
+  else if(S.devAdj<0&&rel>=2){const v=S.devAdj*.4;base+=v;W('League talent level',v)} // veterans share the correction
+  if(S.starAdj&&a<=26&&p.pot>=64&&p.tid>=0){const v=S.starAdj*clamp((p.pot-60)/12,.3,1);base+=v;W('League star level',v)}
   // a veteran leader on the roster speeds up players 23 and under; without one they grow a bit slower
   p.ment=null;
   if(a<=23&&p.tid>=0){const m=mentorOf(p);let v=-.15;if(m){v+=posGrp(m)===posGrp(p)?.55:.35;p.ment=m.pid}base+=v;W(m?`Mentor ${m.name}`:'No mentor',v)}
@@ -4053,6 +4062,7 @@ function release(p,how='waive'){
 function startSeason(){
   const ur=roster(S.userTid);
   if(ur.length>15){toast(`Cut your roster to 15 before the season starts (you have ${ur.length}).`);UI.tab='roster';return}
+  if(!T(S.userTid).staff.hc){toast('Hire a head coach before the season starts.');UI.tab='staff';return}
   checkPromises(false);
   // rival teams finish their shopping even if you start the season early
   while(S.faDay<14){S.faDay++;aiFaRound()}
@@ -4625,7 +4635,36 @@ function aiTrades(rush){
   const X={ais,M,sl,race:aiRace()};
   const req=S.players.filter(p=>p.tradeReq&&ais.includes(p.tid)&&!recentlyMoved(p));
   if(req.length&&aiSellTo(X,pick(req),'request'))return;
+  if(rnd()<STAR_TRY&&aiSellStar(X))return;
   for(const f of shuffle([aiSellVet,aiUpgrade,aiDump,aiSwap]))if(rnd()<.8&&f(X))return;
+}
+// v88: a rebuilding team cashes in its star for young players and picks
+const STAR_TRY=.45;
+function aiSellStar(X){
+  const sells=t=>X.M[t]==='rebuilding'||X.M[t]==='middle'&&S.phase==='regular'&&T(t).w+T(t).l>=25&&T(t).w/(T(t).w+T(t).l)<.45;
+  const c=X.ais.filter(sells).flatMap(t=>roster(t).filter(p=>p.ovr>=STAR_LINE&&p.age>=25&&!p.inj&&!recentlyMoved(p)&&!p.contract.ntc));
+  if(!c.length)return false;
+  const p=pick(c),seller=p.tid,ctxS={mode:'rebuilding',sl:X.sl};
+  const buyers=shuffle(X.ais.filter(t=>t!==seller&&t!==X.race.fav&&(X.M[t]==='contending'||X.M[t]==='middle'&&inRaceAI(t)))).slice(0,6);
+  let best=null;
+  for(const b of buyers)for(const d of starPackages(seller,b,p,ctxS,{mode:X.M[b],sl:X.sl,ok:.92}))if(!best||d.sellerGet>best.sellerGet)best=d;
+  if(!best)return false;
+  aiDoTrade(seller,best.buyer,[p],best.ps,[],best.ks,'star');return true;
+}
+function starPackages(seller,buyer,target,ctxS,ctxB){
+  const deals=[],pool=roster(buyer).filter(p=>!p.inj&&!recentlyMoved(p)&&p!==target).sort((a,b)=>tradeValue(b,ctxB.mode,buyer)-tradeValue(a,ctxB.mode,buyer)).slice(1,8);
+  const ks=S.picks.filter(k=>k.owner===buyer&&k.rd===1&&k.season>S.season).sort((x,y)=>y.season-x.season).slice(0,3);
+  const kOpts=[[],ks.slice(0,1),ks.slice(1,2),ks.slice(0,2)].filter((o,i)=>!i||o.length);
+  const tryIt=(ps,kk)=>{
+    if(!aiLegal(seller,buyer,[target],ps,[],kk))return;
+    const s=sideOk(seller,ctxS,ps,kk,[target],[]),b=sideOk(buyer,ctxB,[target],[],ps,kk);
+    if(s.ok&&b.ok)deals.push({buyer,ps,ks:kk,sellerGet:s.get});
+  };
+  for(let i=0;i<pool.length;i++)for(let j=i+1;j<pool.length;j++){
+    for(const kk of kOpts)tryIt([pool[i],pool[j]],kk);
+    for(let l=j+1;l<pool.length;l++)for(const kk of kOpts.slice(0,2))tryIt([pool[i],pool[j],pool[l]],kk);
+  }
+  return deals;
 }
 // buyers bid for one player; the seller takes the best bid
 function aiSellTo(X,p,why,buyers,ok){
@@ -4717,7 +4756,7 @@ function aiDraftTrade(){
 function aiDoTrade(a,b,aP,bP,aK,bK,why){
   const o0=[teamOvr(a),teamOvr(b)],va=tradeVals(a,bP,aP,bK,aK),vb=tradeVals(b,aP,bP,aK,bK);
   const nm=(ps,ks)=>[...ps.map(p=>p.name),...ks.map(k=>pickLabel(k)+' pick')].join(' and ')||'nothing';
-  const WHY={request:aP[0]?` ${aP[0].name} had asked out.`:'',dump:` The ${T(a).nick} cleared salary.`,upgrade:` The ${T(b).nick} went shopping for a contender's upgrade.`,draft:` The ${T(a).nick} moved down on draft night.`};
+  const WHY={request:aP[0]?` ${aP[0].name} had asked out.`:'',dump:` The ${T(a).nick} cleared salary.`,upgrade:` The ${T(b).nick} went shopping for a contender's upgrade.`,draft:` The ${T(a).nick} moved down on draft night.`,star:` The ${T(b).nick} landed a star; the ${T(a).nick} start over.`};
   news(`Trade: the ${tname(a)} sent ${nm(aP,aK)} to the ${tname(b)} for ${nm(bP,bK)}.${WHY[why]||''}`);
   tradeCap(a,b,aP,bP);
   aP.forEach(p=>{p.tid=b;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});bP.forEach(p=>{p.tid=a;newTeamMood(p);p.acqTick=S.tick;p.agg=aggUntil()});
@@ -6287,6 +6326,8 @@ function decList(){
   if(S.bizEv)r.push(['Business',S.bizEv.title]);
   if(S.presser)r.push(['Press',S.presser.title]);
   if(os.length)r.push(['Trades',`${os.length} offer${os.length>1?'s':''}, latest from the ${tname(os[os.length-1].tid)}`]);
+  const vac=ROLES.filter(([k])=>!T(S.userTid).staff[k]).map(([,l])=>l.toLowerCase());
+  if(vac.length)r.push(['Staff',`No ${vac.join(', ')}: hire on the Staff tab`]);
   return r;
 }
 const decSig=()=>{const s=noteState();return [s.o.join(','),s.p,s.b,s.l,s.w].join('|')};
